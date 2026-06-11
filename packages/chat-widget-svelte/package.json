@@ -1,0 +1,44 @@
+{
+  "name": "@uraiai/chat-widget-svelte",
+  "version": "0.0.0",
+  "description": "Svelte 5 component for the Urai chat widget",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "svelte": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "svelte-package -i src/lib -o dist",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "@uraiai/chat-widget-core": "workspace:^"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/package": "^2.3.7",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "svelte": "^5.16.0",
+    "svelte-check": "^4.1.1",
+    "typescript": "^5.9.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["urai", "chat", "widget", "chatbot", "svelte"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uraiai/urai-chat-sdk",
+    "directory": "packages/chat-widget-svelte"
+  }
+}

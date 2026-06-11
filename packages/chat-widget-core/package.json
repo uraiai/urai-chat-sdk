@@ -1,0 +1,38 @@
+{
+  "name": "@uraiai/chat-widget-core",
+  "version": "0.0.0",
+  "description": "Framework-agnostic engine for the Urai chat widget",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.0",
+    "marked": "^16.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.9.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["urai", "chat", "widget", "chatbot"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uraiai/urai-chat-sdk",
+    "directory": "packages/chat-widget-core"
+  }
+}
