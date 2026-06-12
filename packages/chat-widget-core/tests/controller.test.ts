@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createUraiChatWidget } from "../src/create-widget";
 import {
+  FakeEventSource,
   installFakeEventSource,
   installFakeFetch,
   flushAsync,
@@ -196,13 +197,40 @@ describe("createUraiChatWidget", () => {
 
     expect(userMessages).toEqual(["Hello there"]);
 
-    const { FakeEventSource } = await import("./helpers");
     const es = FakeEventSource.last()!;
     es.dispatch("message", "Hi ");
     es.dispatch("message", "back");
     es.dispatch("complete", JSON.stringify({ id: "a1", content: "Hi back" }));
 
     expect(replies).toEqual(["Hi back"]);
+    w.destroy();
+  });
+
+  it("bubbles stream command events to the host verbatim", async () => {
+    installFakeEventSource();
+    installFakeFetch(widgetRoutes());
+    const w = makeWidget();
+    await w.ready;
+
+    const commands: unknown[] = [];
+    w.on("command", (e) => {
+      if (e.type === "command") commands.push(e.command);
+    });
+
+    w.open();
+    w.sendMessage("Hello");
+    await flushAsync();
+
+    const es = FakeEventSource.last()!;
+    es.dispatch(
+      "command",
+      JSON.stringify({ command: "navigate", url: "/pricing" }),
+    );
+    expect(commands).toEqual([{ command: "navigate", url: "/pricing" }]);
+
+    // Malformed payloads are dropped, not thrown.
+    es.dispatch("command", "not json");
+    expect(commands).toHaveLength(1);
     w.destroy();
   });
 });

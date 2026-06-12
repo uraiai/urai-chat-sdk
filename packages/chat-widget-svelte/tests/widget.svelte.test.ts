@@ -2,6 +2,7 @@ import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import UraiChatWidget from "../src/lib/UraiChatWidget.svelte";
 import {
+  FakeEventSource,
   installFakeEventSource,
   installFakeFetch,
   flushAsync,
@@ -18,6 +19,16 @@ function widgetRoutes(token: string) {
       assistant: { id: "a1", name: "Bot", description: null },
     }),
     [`GET /api/widget/v1/${token}/threads`]: () => [],
+    [`POST /api/widget/v1/${token}/threads`]: () => ({
+      thread_id: "t1",
+      created: true,
+    }),
+    [`POST /api/widget/v1/${token}/threads/t1/messages`]: () => ({
+      user_message_id: "u1",
+      assistant_message_id: "a1",
+      thread_id: "t1",
+      stream_url: "/ignored",
+    }),
   };
 }
 
@@ -116,6 +127,33 @@ describe("UraiChatWidget (Svelte)", () => {
       instance as unknown as { getController(): { open(): void } | null }
     ).getController();
     expect(controller).not.toBeNull();
+    unmount(instance);
+    target.remove();
+  });
+
+  it("fires oncommand for stream command events", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const oncommand = vi.fn();
+    const instance = mount(UraiChatWidget, {
+      target,
+      props: { widgetToken: TOKEN, userId: "v1", baseUrl: BASE, oncommand },
+    });
+    flushSync();
+    await flushAsync();
+
+    const controller = (
+      instance as unknown as {
+        getController(): { open(): void; sendMessage(c: string): void } | null;
+      }
+    ).getController()!;
+    controller.open();
+    controller.sendMessage("hi");
+    await flushAsync();
+
+    const es = FakeEventSource.last()!;
+    es.dispatch("command", JSON.stringify({ command: "navigate" }));
+    expect(oncommand).toHaveBeenCalledWith({ command: "navigate" });
     unmount(instance);
     target.remove();
   });

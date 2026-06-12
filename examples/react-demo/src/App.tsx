@@ -110,6 +110,7 @@ export function App() {
         onClosed={() => addLog("closed")}
         onUserMessage={(c) => addLog(`user-message: ${c}`)}
         onAssistantReply={(c) => addLog(`assistant-reply: ${c.slice(0, 60)}…`)}
+        onCommand={(cmd) => addLog(`command: ${JSON.stringify(cmd)}`)}
         onError={(e) => addLog(`error: ${e}`)}
       />
 

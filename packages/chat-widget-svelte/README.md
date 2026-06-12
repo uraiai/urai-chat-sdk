@@ -34,7 +34,15 @@ Required: `widgetToken`, `userId`.
 Optional: `baseUrl` (defaults to `https://chat.app.urai.dev`; set it for
 self-hosted deployments), `vars`, `theme`, `layout`, `behavior`, `mode`
 (`"floating"` default | `"inline"`), and callback props `onready`,
-`onopened`, `onclosed`, `onusermessage`, `onassistantreply`, `onerror`.
+`onopened`, `onclosed`, `onusermessage`, `onassistantreply`, `oncommand`,
+`onerror`.
+
+`oncommand` fires when a uraiJS tool calls
+`meta.urai.sendCommand(meta.vars.thread_id, payload)` during the turn —
+use it to react to tool-driven UI signals (e.g. navigation). The payload
+is the tool author's JSON, verbatim: treat it as untrusted and validate
+its shape before acting. Delivered only while the turn's stream is open;
+each open widget instance receives its own copy.
 
 In inline mode the component renders a `div` and the chat panel fills it —
 size it via the parent element.

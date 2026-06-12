@@ -19,6 +19,11 @@ interface Props {
     onclosed?: () => void;
     onusermessage?: (content: string) => void;
     onassistantreply?: (content: string) => void;
+    /**
+     * A uraiJS tool sent a command via `meta.urai.sendCommand`. The
+     * payload is the developer's JSON, verbatim — treat as untrusted.
+     */
+    oncommand?: (command: unknown) => void;
     onerror?: (error: string) => void;
 }
 declare const UraiChatWidget: import("svelte").Component<Props, {

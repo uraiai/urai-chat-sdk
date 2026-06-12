@@ -30,6 +30,11 @@
     onclosed?: () => void;
     onusermessage?: (content: string) => void;
     onassistantreply?: (content: string) => void;
+    /**
+     * A uraiJS tool sent a command via `meta.urai.sendCommand`. The
+     * payload is the developer's JSON, verbatim — treat as untrusted.
+     */
+    oncommand?: (command: unknown) => void;
     onerror?: (error: string) => void;
   }
 
@@ -47,6 +52,7 @@
     onclosed,
     onusermessage,
     onassistantreply,
+    oncommand,
     onerror,
   }: Props = $props();
 
@@ -99,6 +105,9 @@
       }),
       c.on("assistant-reply", (e) => {
         if (e.type === "assistant-reply") onassistantreply?.(e.content);
+      }),
+      c.on("command", (e) => {
+        if (e.type === "command") oncommand?.(e.command);
       }),
       c.on("error", (e) => {
         if (e.type === "error") onerror?.(e.error);

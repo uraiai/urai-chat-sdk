@@ -51,7 +51,7 @@ widget.destroy();
 (promise, resolves after config fetch + mount), `destroy()` (idempotent).
 
 Events: `ready`, `opened`, `closed`, `user-message`, `assistant-reply`,
-`error`, `destroyed`.
+`command`, `error`, `destroyed`.
 
 Calls made before `ready` resolves are queued and replayed in order.
 
@@ -81,6 +81,29 @@ widget.startConversation({ topic: "billing" });
 // 4. Alongside an identity change
 widget.setUser({ id: "user_43", vars: { plan: "enterprise" } });
 ```
+
+## Receiving commands from tools
+
+A uraiJS tool can signal the host page during a turn by calling
+`meta.urai.sendCommand(meta.vars.thread_id, payload)` — e.g. to navigate
+the app to a relevant view. The widget surfaces it as a `command` event:
+
+```ts
+widget.on("command", (e) => {
+  if (e.type !== "command") return;
+  const cmd = e.command as { command?: string; url?: string };
+  // The payload is whatever the tool author sent — treat it as untrusted
+  // input and validate before acting.
+  if (cmd.command === "navigate" && typeof cmd.url === "string") {
+    router.push(cmd.url);
+  }
+});
+```
+
+Caveats: commands are delivered only while the assistant turn's stream is
+open (a command fired long after the tool returns may be dropped), and
+every open widget for the conversation (e.g. multiple tabs) receives its
+own copy.
 
 ## Notes
 

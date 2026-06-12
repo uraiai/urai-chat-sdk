@@ -66,6 +66,11 @@ export const UraiChatWidget = defineComponent({
     closed: () => true,
     "user-message": (_content: string) => true,
     "assistant-reply": (_content: string) => true,
+    /**
+     * A uraiJS tool sent a command via `meta.urai.sendCommand`. The
+     * payload is the developer's JSON, verbatim — treat as untrusted.
+     */
+    command: (_command: unknown) => true,
     error: (_error: string) => true,
   },
   setup(props, { emit, expose }) {
@@ -118,6 +123,9 @@ export const UraiChatWidget = defineComponent({
         }),
         c.on("assistant-reply", (e) => {
           if (e.type === "assistant-reply") emit("assistant-reply", e.content);
+        }),
+        c.on("command", (e) => {
+          if (e.type === "command") emit("command", e.command);
         }),
         c.on("error", (e) => {
           if (e.type === "error") emit("error", e.error);

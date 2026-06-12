@@ -8,6 +8,14 @@ export type WidgetEvent =
   | { type: "closed" }
   | { type: "user-message"; content: string }
   | { type: "assistant-reply"; content: string }
+  /**
+   * A uraiJS tool called `meta.urai.sendCommand(thread_id, payload)`
+   * during this turn. `command` is the developer's payload, verbatim —
+   * treat it as untrusted input and validate its shape before acting.
+   * Delivered only while the turn's stream is open; every open consumer
+   * (e.g. multiple tabs) receives its own copy.
+   */
+  | { type: "command"; command: unknown }
   | { type: "error"; error: string }
   | { type: "destroyed" };
 

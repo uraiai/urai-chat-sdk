@@ -135,11 +135,15 @@ describe("destroy", () => {
     await flushAsync();
 
     const replies = vi.fn();
+    const commands = vi.fn();
     w.on("assistant-reply", replies);
+    w.on("command", commands);
     const es = FakeEventSource.last()!;
     w.destroy();
-    // A straggling frame after teardown must be ignored.
+    // Straggling frames after teardown must be ignored.
+    es.dispatch("command", JSON.stringify({ command: "navigate" }));
     es.dispatch("complete", JSON.stringify({ id: "a1", content: "late" }));
     expect(replies).not.toHaveBeenCalled();
+    expect(commands).not.toHaveBeenCalled();
   });
 });

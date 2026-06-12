@@ -49,6 +49,11 @@ export interface UraiChatWidgetProps {
   onClosed?: () => void;
   onUserMessage?: (content: string) => void;
   onAssistantReply?: (content: string) => void;
+  /**
+   * A uraiJS tool sent a command via `meta.urai.sendCommand`. The payload
+   * is the developer's JSON, verbatim — treat as untrusted input.
+   */
+  onCommand?: (command: unknown) => void;
   onError?: (error: string) => void;
 }
 
@@ -102,6 +107,9 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
         }),
         controller.on("assistant-reply", (e) => {
           if (e.type === "assistant-reply") c().onAssistantReply?.(e.content);
+        }),
+        controller.on("command", (e) => {
+          if (e.type === "command") c().onCommand?.(e.command);
         }),
         controller.on("error", (e) => {
           if (e.type === "error") c().onError?.(e.error);

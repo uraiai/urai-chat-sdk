@@ -88,6 +88,7 @@ function setVarsNow() {
         @closed="addLog('closed')"
         @user-message="(c: string) => addLog(`user-message: ${c}`)"
         @assistant-reply="(c: string) => addLog(`assistant-reply: ${c.slice(0, 60)}…`)"
+        @command="(cmd: unknown) => addLog(`command: ${JSON.stringify(cmd)}`)"
         @error="(e: string) => addLog(`error: ${e}`)"
       />
 

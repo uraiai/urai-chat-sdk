@@ -40,7 +40,14 @@ self-hosted deployments), `vars`, `theme`, `layout`, `behavior`, `mode`
 (`"floating"` default | `"inline"`), `className`/`style` (inline container
 div only), and
 event callbacks `onReady`, `onOpened`, `onClosed`, `onUserMessage`,
-`onAssistantReply`, `onError`.
+`onAssistantReply`, `onCommand`, `onError`.
+
+`onCommand` fires when a uraiJS tool calls
+`meta.urai.sendCommand(meta.vars.thread_id, payload)` during the turn —
+use it to react to tool-driven UI signals (e.g. navigation). The payload
+is the tool author's JSON, verbatim: treat it as untrusted and validate
+its shape before acting. Delivered only while the turn's stream is open;
+each open widget instance receives its own copy.
 
 In inline mode the component renders a `div` and the chat panel fills it —
 give it a height via `style`/`className`.

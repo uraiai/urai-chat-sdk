@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { UraiChatWidget } from "../src/index";
 import {
+  FakeEventSource,
   installFakeEventSource,
   installFakeFetch,
   flushAsync,
@@ -19,6 +20,16 @@ function widgetRoutes(token: string) {
       assistant: { id: "a1", name: "Bot", description: null },
     }),
     [`GET /api/widget/v1/${token}/threads`]: () => [],
+    [`POST /api/widget/v1/${token}/threads`]: () => ({
+      thread_id: "t1",
+      created: true,
+    }),
+    [`POST /api/widget/v1/${token}/threads/t1/messages`]: () => ({
+      user_message_id: "u1",
+      assistant_message_id: "a1",
+      thread_id: "t1",
+      stream_url: "/ignored",
+    }),
   };
 }
 
@@ -87,6 +98,26 @@ describe("UraiChatWidget (Vue)", () => {
       wrapper.element.querySelector?.("[data-urai-chat-widget]") ??
         document.querySelector("div > [data-urai-chat-widget]"),
     ).not.toBeNull();
+    wrapper.unmount();
+  });
+
+  it("emits command for stream command events", async () => {
+    const wrapper = mount(UraiChatWidget, {
+      props: { widgetToken: TOKEN, userId: "v1", baseUrl: BASE },
+    });
+    await flushAsync();
+    const controller = (
+      wrapper.vm as unknown as {
+        controller: { open(): void; sendMessage(c: string): void };
+      }
+    ).controller;
+    controller.open();
+    controller.sendMessage("hi");
+    await flushAsync();
+
+    const es = FakeEventSource.last()!;
+    es.dispatch("command", JSON.stringify({ command: "navigate" }));
+    expect(wrapper.emitted("command")).toEqual([[{ command: "navigate" }]]);
     wrapper.unmount();
   });
 

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WidgetController } from "@uraiai/chat-widget-core";
 import { UraiChatWidget } from "../src/index";
 import {
+  FakeEventSource,
   installFakeEventSource,
   installFakeFetch,
   flushAsync,
@@ -20,6 +21,16 @@ function widgetRoutes(token: string) {
       assistant: { id: "a1", name: "Bot", description: null },
     }),
     [`GET /api/widget/v1/${token}/threads`]: () => [],
+    [`POST /api/widget/v1/${token}/threads`]: () => ({
+      thread_id: "t1",
+      created: true,
+    }),
+    [`POST /api/widget/v1/${token}/threads/t1/messages`]: () => ({
+      user_message_id: "u1",
+      assistant_message_id: "a1",
+      thread_id: "t1",
+      stream_url: "/ignored",
+    }),
   };
 }
 
@@ -117,6 +128,30 @@ describe("UraiChatWidget (React)", () => {
     await act(flushAsync);
     act(() => ref.current!.open());
     expect(onOpened).toHaveBeenCalledOnce();
+  });
+
+  it("fires onCommand for stream command events", async () => {
+    const ref = createRef<WidgetController>();
+    const onCommand = vi.fn();
+    render(
+      <UraiChatWidget
+        ref={ref}
+        widgetToken={TOKEN}
+        userId="v1"
+        baseUrl={BASE}
+        onCommand={onCommand}
+      />,
+    );
+    await act(flushAsync);
+    act(() => {
+      ref.current!.open();
+      ref.current!.sendMessage("hi");
+    });
+    await act(flushAsync);
+
+    const es = FakeEventSource.last()!;
+    act(() => es.dispatch("command", JSON.stringify({ command: "navigate" })));
+    expect(onCommand).toHaveBeenCalledWith({ command: "navigate" });
   });
 
   it("fires onReady and onError callbacks", async () => {

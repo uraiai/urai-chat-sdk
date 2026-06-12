@@ -607,6 +607,9 @@ export function mountWidget(args: MountArgs): MountedWidget {
           bubble.innerHTML = renderMarkdown(buf);
           scrollToBottom();
         },
+        onCommand(command) {
+          emit({ type: "command", command });
+        },
         onComplete(msg) {
           if (destroyed) return;
           if (msg?.content) {

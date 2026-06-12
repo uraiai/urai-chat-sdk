@@ -170,6 +170,15 @@ export class Transport {
     es.addEventListener("reasoning", (e) =>
       handlers.onReasoning?.((e as MessageEvent).data),
     );
+    // uraiJS `sendCommand` relay — the payload is the developer's JSON,
+    // verbatim. Forwarded to the host page, never rendered.
+    es.addEventListener("command", (e) => {
+      try {
+        handlers.onCommand?.(JSON.parse((e as MessageEvent).data));
+      } catch {
+        // malformed command payload — ignore
+      }
+    });
     // The "complete" event is the authoritative end-of-turn signal — it
     // carries the finalised assistant message. The server also fires a
     // separate "done" event right after, but per the HTML5 SSE spec an
@@ -215,6 +224,7 @@ export class Transport {
 export interface StreamHandlers {
   onChunk?: (chunk: string) => void;
   onReasoning?: (chunk: string) => void;
+  onCommand?: (command: unknown) => void;
   onComplete?: (message: ServerMessage | null) => void;
   onDone?: () => void;
   onError?: (error: string) => void;

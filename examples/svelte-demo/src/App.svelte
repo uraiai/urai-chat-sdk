@@ -84,6 +84,7 @@
       onclosed={() => addLog("closed")}
       onusermessage={(c) => addLog(`user-message: ${c}`)}
       onassistantreply={(c) => addLog(`assistant-reply: ${c.slice(0, 60)}…`)}
+      oncommand={(cmd) => addLog(`command: ${JSON.stringify(cmd)}`)}
       onerror={(e) => addLog(`error: ${e}`)}
     />
 
