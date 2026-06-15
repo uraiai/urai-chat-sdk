@@ -158,10 +158,108 @@ export const baseStyles = `
 
 .ucw-composer {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid var(--ucw-border);
   background: var(--ucw-surface);
+}
+.ucw-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.ucw-attach-btn {
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--ucw-muted);
+  border: 1px solid var(--ucw-border);
+  border-radius: 10px;
+  padding: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--ucw-font);
+}
+.ucw-attach-btn:hover { color: var(--ucw-primary); border-color: var(--ucw-primary); }
+.ucw-attach-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ucw-attach-btn svg { width: 18px; height: 18px; }
+.ucw-attach-input { display: none; }
+
+.ucw-pending {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ucw-pending-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--ucw-background);
+  border: 1px solid var(--ucw-border);
+  border-radius: 8px;
+  padding: 4px 6px 4px 8px;
+  font-size: 12px;
+  color: var(--ucw-text);
+  max-width: 200px;
+}
+.ucw-pending-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ucw-pending-chip button {
+  background: transparent;
+  border: none;
+  color: var(--ucw-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+}
+.ucw-pending-chip button:hover { color: var(--ucw-text); background: var(--ucw-border); }
+.ucw-pending-chip button svg { width: 12px; height: 12px; }
+.ucw-pending-chip.ucw-pending-uploading { opacity: 0.7; }
+.ucw-pending-chip.ucw-pending-error { border-color: #dc2626; color: #dc2626; }
+
+.ucw-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.ucw-attachment-image {
+  display: block;
+  max-width: 220px;
+  max-height: 180px;
+  border-radius: 8px;
+  border: 1px solid var(--ucw-border);
+  object-fit: cover;
+  cursor: pointer;
+}
+.ucw-attachment-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--ucw-border);
+  border-radius: 8px;
+  background: var(--ucw-background);
+  color: var(--ucw-text);
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+  max-width: 220px;
+  font-family: var(--ucw-font);
+}
+.ucw-attachment-file:hover { border-color: var(--ucw-primary); color: var(--ucw-primary); }
+.ucw-attachment-file svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.ucw-attachment-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ucw-composer textarea {
   flex: 1;

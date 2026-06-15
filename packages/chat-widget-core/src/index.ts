@@ -30,4 +30,6 @@ export type {
   ThreadSummary,
   SendMessageResult,
   CreateThreadResult,
+  WidgetAttachment,
+  WidgetMessageAttachment,
 } from "./transport";

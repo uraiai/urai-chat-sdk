@@ -4,7 +4,13 @@
 import type { ResolvedConfig } from "./config";
 import { ICONS } from "./icons";
 import { renderMarkdown } from "./markdown";
-import type { ServerMessage, ThreadSummary, Transport } from "./transport";
+import type {
+  ServerMessage,
+  ThreadSummary,
+  Transport,
+  WidgetAttachment,
+  WidgetMessageAttachment,
+} from "./transport";
 import { clearThread, loadThread, saveThread } from "./session";
 import type { WidgetEvent } from "./events";
 import { applyTheme } from "./theme";
@@ -51,6 +57,25 @@ export interface MountedWidget {
    * No events are emitted after destroy.
    */
   destroy(): void;
+}
+
+/**
+ * In-composer state for a file the visitor picked. Stays "uploading"
+ * until the server returns a bucket_path; on success it carries the
+ * descriptor we'll send with the next message. Errors are surfaced via
+ * the chip itself and don't block the visitor from removing it or
+ * picking new files.
+ */
+interface PendingAttachment {
+  localId: number;
+  fileName: string;
+  mimeType: string;
+  /** Kept around so the user bubble can render a preview from the local
+   *  blob instead of round-tripping through the download endpoint. */
+  file: File;
+  status: "uploading" | "ready" | "error";
+  errorMessage?: string;
+  uploaded?: WidgetAttachment;
 }
 
 interface UiState {
@@ -122,6 +147,9 @@ export function mountWidget(args: MountArgs): MountedWidget {
   let body: HTMLDivElement;
   let textarea: HTMLTextAreaElement;
   let sendBtn: HTMLButtonElement;
+  let attachBtn: HTMLButtonElement | null = null;
+  let fileInput: HTMLInputElement | null = null;
+  let pendingRow: HTMLDivElement | null = null;
   let suggestedContainer: HTMLDivElement | null = null;
   let openButton: HTMLButtonElement | null = null;
   let threadTrigger: HTMLButtonElement | null = null;
@@ -129,6 +157,10 @@ export function mountWidget(args: MountArgs): MountedWidget {
   let panelBodyArea: HTMLDivElement | null = null;
   let isDropdownOpen = false;
   let cachedThreads: ThreadSummary[] | null = null;
+  const pendingAttachments: PendingAttachment[] = [];
+  let pendingLocalIdSeq = 0;
+  /** ObjectURLs we minted for inline attachment previews; revoked on reset/destroy. */
+  const attachmentObjectUrls: string[] = [];
 
   function applyLayoutAttrs() {
     root.dataset.mode = config.layout.mode;
@@ -423,6 +455,39 @@ export function mountWidget(args: MountArgs): MountedWidget {
   function buildComposer(): HTMLDivElement {
     const composer = document.createElement("div");
     composer.className = "ucw-composer";
+
+    pendingRow = document.createElement("div");
+    pendingRow.className = "ucw-pending";
+    pendingRow.style.display = "none";
+    composer.appendChild(pendingRow);
+
+    const row = document.createElement("div");
+    row.className = "ucw-composer-row";
+
+    // Attachments are unsupported in preview mode (no backing transport).
+    if (transport && !previewMode) {
+      attachBtn = document.createElement("button");
+      attachBtn.type = "button";
+      attachBtn.className = "ucw-attach-btn";
+      attachBtn.title = "Attach files";
+      attachBtn.setAttribute("aria-label", "Attach files");
+      attachBtn.innerHTML = ICONS.paperclip;
+      attachBtn.addEventListener("click", () => fileInput?.click());
+      row.appendChild(attachBtn);
+
+      fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.multiple = true;
+      fileInput.className = "ucw-attach-input";
+      fileInput.addEventListener("change", () => {
+        if (!fileInput?.files) return;
+        const picked = Array.from(fileInput.files);
+        fileInput.value = "";
+        for (const f of picked) void startUpload(f);
+      });
+      row.appendChild(fileInput);
+    }
+
     textarea = document.createElement("textarea");
     textarea.rows = 1;
     textarea.placeholder = config.behavior.placeholder;
@@ -437,9 +502,94 @@ export function mountWidget(args: MountArgs): MountedWidget {
     sendBtn.type = "button";
     sendBtn.textContent = config.behavior.sendLabel;
     sendBtn.addEventListener("click", () => submit());
-    composer.appendChild(textarea);
-    composer.appendChild(sendBtn);
+    row.appendChild(textarea);
+    row.appendChild(sendBtn);
+    composer.appendChild(row);
     return composer;
+  }
+
+  // ---- Attachment composer state ---------------------------------------
+
+  async function startUpload(file: File) {
+    if (!transport) return;
+    const pending: PendingAttachment = {
+      localId: ++pendingLocalIdSeq,
+      fileName: file.name,
+      mimeType: file.type || "application/octet-stream",
+      file,
+      status: "uploading",
+    };
+    pendingAttachments.push(pending);
+    renderPendingAttachments();
+    try {
+      const uploaded = await transport.uploadAttachment(file);
+      if (destroyed) return;
+      pending.status = "ready";
+      pending.uploaded = uploaded;
+      pending.mimeType = uploaded.mime_type;
+    } catch (e: unknown) {
+      if (destroyed) return;
+      pending.status = "error";
+      pending.errorMessage = e instanceof Error ? e.message : String(e);
+    }
+    renderPendingAttachments();
+  }
+
+  function removePending(localId: number) {
+    const idx = pendingAttachments.findIndex((p) => p.localId === localId);
+    if (idx >= 0) {
+      pendingAttachments.splice(idx, 1);
+      renderPendingAttachments();
+    }
+  }
+
+  function renderPendingAttachments() {
+    if (!pendingRow) return;
+    pendingRow.innerHTML = "";
+    if (pendingAttachments.length === 0) {
+      pendingRow.style.display = "none";
+      return;
+    }
+    pendingRow.style.display = "flex";
+    for (const p of pendingAttachments) {
+      const chip = document.createElement("div");
+      chip.className = "ucw-pending-chip";
+      if (p.status === "uploading") chip.classList.add("ucw-pending-uploading");
+      if (p.status === "error") chip.classList.add("ucw-pending-error");
+
+      const name = document.createElement("span");
+      name.className = "ucw-pending-chip-name";
+      name.textContent =
+        p.status === "uploading"
+          ? `${p.fileName}…`
+          : p.status === "error"
+            ? `${p.fileName} — failed`
+            : p.fileName;
+      name.title = p.status === "error" && p.errorMessage ? p.errorMessage : p.fileName;
+      chip.appendChild(name);
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.title = "Remove";
+      remove.setAttribute("aria-label", "Remove attachment");
+      remove.innerHTML = ICONS.x;
+      remove.addEventListener("click", () => removePending(p.localId));
+      chip.appendChild(remove);
+
+      pendingRow.appendChild(chip);
+    }
+  }
+
+  function clearPendingAttachments() {
+    pendingAttachments.length = 0;
+    renderPendingAttachments();
+  }
+
+  function revokeAttachmentObjectUrls() {
+    for (const url of attachmentObjectUrls) {
+      try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+    }
+    attachmentObjectUrls.length = 0;
   }
 
   function autosize() {
@@ -475,12 +625,94 @@ export function mountWidget(args: MountArgs): MountedWidget {
     }
   }
 
-  function appendUserBubble(text: string) {
+  /**
+   * Append a user bubble with text and/or attachments. The attachments
+   * source is polymorphic:
+   *   - `remote` for history items — fetched via the widget API on demand
+   *   - `local` for the visitor's just-picked files — already in-browser
+   *     so we render straight from the File via `URL.createObjectURL`.
+   */
+  type LocalAttachment = { kind: "local"; file: File; mimeType: string; fileName: string };
+  type RemoteAttachment = { kind: "remote"; messageId: string; attachment: WidgetMessageAttachment };
+  type RenderableAttachment = LocalAttachment | RemoteAttachment;
+
+  function appendUserBubble(text: string, attachments?: RenderableAttachment[]) {
     const el = document.createElement("div");
     el.className = "ucw-bubble ucw-user";
-    el.textContent = text;
+    if (text) {
+      const textEl = document.createElement("div");
+      textEl.textContent = text;
+      el.appendChild(textEl);
+    }
+    if (attachments && attachments.length > 0) {
+      el.appendChild(buildAttachmentList(attachments));
+    }
     body.appendChild(el);
     scrollToBottom();
+  }
+
+  function buildAttachmentList(items: RenderableAttachment[]): HTMLDivElement {
+    const row = document.createElement("div");
+    row.className = "ucw-attachments";
+    for (const item of items) {
+      const fileName = item.kind === "local" ? item.fileName : item.attachment.file_name;
+      const mime = item.kind === "local" ? item.mimeType : item.attachment.mime_type;
+      const isImage = mime.startsWith("image/");
+      if (isImage) {
+        const img = document.createElement("img");
+        img.className = "ucw-attachment-image";
+        img.alt = fileName;
+        img.title = fileName;
+        img.src =
+          "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'></svg>";
+        void hydrateImage(img, item);
+        row.appendChild(img);
+      } else {
+        const link = document.createElement("button");
+        link.type = "button";
+        link.className = "ucw-attachment-file";
+        link.title = fileName;
+        link.innerHTML = `${ICONS.file}<span class="ucw-attachment-file-name">${escapeHtml(fileName)}</span>${ICONS.download}`;
+        link.addEventListener("click", () => void downloadAttachment(item));
+        row.appendChild(link);
+      }
+    }
+    return row;
+  }
+
+  async function resolveAttachmentBlob(item: RenderableAttachment): Promise<Blob | null> {
+    if (item.kind === "local") return item.file;
+    if (!transport) return null;
+    try {
+      return await transport.fetchAttachment(item.messageId, item.attachment.id);
+    } catch (e) {
+      console.warn("[UraiChat] attachment fetch failed:", e);
+      return null;
+    }
+  }
+
+  async function hydrateImage(img: HTMLImageElement, item: RenderableAttachment) {
+    const blob = await resolveAttachmentBlob(item);
+    if (!blob || destroyed) return;
+    const url = URL.createObjectURL(blob);
+    attachmentObjectUrls.push(url);
+    img.src = url;
+    img.addEventListener("click", () => window.open(url, "_blank"));
+  }
+
+  async function downloadAttachment(item: RenderableAttachment) {
+    const blob = await resolveAttachmentBlob(item);
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    attachmentObjectUrls.push(url);
+    const fileName = item.kind === "local" ? item.fileName : item.attachment.file_name;
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
 
   function appendAssistantText(text: string): HTMLDivElement {
@@ -565,7 +797,12 @@ export function mountWidget(args: MountArgs): MountedWidget {
   function renderHistory(messages: ServerMessage[]) {
     for (const m of messages) {
       if (m.role === "user") {
-        appendUserBubble(m.content);
+        const atts: RenderableAttachment[] = (m.attachments ?? []).map((a) => ({
+          kind: "remote",
+          messageId: m.id,
+          attachment: a,
+        }));
+        appendUserBubble(m.content, atts);
       } else if (m.role === "assistant" && m.content) {
         appendAssistantText(m.content);
       }
@@ -575,11 +812,46 @@ export function mountWidget(args: MountArgs): MountedWidget {
   async function submit() {
     if (destroyed) return;
     const text = textarea.value.trim();
-    if (!text || state.isSending) return;
+    if (state.isSending) return;
+
+    const hasPending = pendingAttachments.length > 0;
+    if (!text && !hasPending) return;
+
+    // Wait for in-flight uploads. The upload endpoint enforces the 50MB
+    // body cap and fails fast, so we don't add a parallel timeout here.
+    if (hasPending && pendingAttachments.some((p) => p.status === "uploading")) {
+      setSending(true);
+      while (pendingAttachments.some((p) => p.status === "uploading")) {
+        await new Promise((r) => setTimeout(r, 50));
+        if (destroyed) return;
+      }
+      setSending(false);
+    }
+
+    const ready = pendingAttachments.filter(
+      (p): p is PendingAttachment & { uploaded: WidgetAttachment } =>
+        p.status === "ready" && !!p.uploaded,
+    );
+    if (!text && ready.length === 0) {
+      if (pendingAttachments.some((p) => p.status === "error")) {
+        appendError("Attachment upload failed");
+      }
+      return;
+    }
+
+    const renderable: RenderableAttachment[] = ready.map((p) => ({
+      kind: "local",
+      file: p.file,
+      mimeType: p.mimeType,
+      fileName: p.fileName,
+    }));
+    const uploadedDescriptors = ready.map((p) => p.uploaded);
+
     textarea.value = "";
     autosize();
     clearSuggested();
-    appendUserBubble(text);
+    clearPendingAttachments();
+    appendUserBubble(text, renderable);
     emit({ type: "user-message", content: text });
     setSending(true);
 
@@ -595,7 +867,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     const typing = appendTyping();
     try {
       const threadId = await ensureThread();
-      const send = await transport.sendMessage(threadId, text);
+      const send = await transport.sendMessage(threadId, text, uploadedDescriptors);
       typing.remove();
       if (destroyed) return;
       const bubble = appendAssistantText("");
@@ -728,6 +1000,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
     if (!previewMode) {
       clearThread(widgetToken, state.userId);
     }
+    clearPendingAttachments();
+    revokeAttachmentObjectUrls();
     if (body) {
       body.innerHTML = "";
       renderWelcome();
@@ -750,6 +1024,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
       // "New conversation" intent so the new visitor's existing
       // threads can auto-restore on next open.
       state.forceNewOnNextCreate = false;
+      clearPendingAttachments();
+      revokeAttachmentObjectUrls();
       if (body) {
         body.innerHTML = "";
         renderWelcome();
@@ -857,6 +1133,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
       clearTimeout(previewTimer);
       previewTimer = null;
     }
+    revokeAttachmentObjectUrls();
     hostElement.remove();
   }
 

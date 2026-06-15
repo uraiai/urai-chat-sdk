@@ -34,6 +34,32 @@ export interface ServerMessage {
   content: string;
   reasoning: string | null;
   created_at: string;
+  attachments?: WidgetMessageAttachment[] | null;
+}
+
+/**
+ * Reference to a file the visitor has uploaded but not yet attached to
+ * a message. Returned by `uploadAttachment`; passed verbatim into the
+ * next `sendMessage` call. `bucket_path` is opaque and scoped to the
+ * visitor server-side — re-validated on every send.
+ */
+export interface WidgetAttachment {
+  file_name: string;
+  mime_type: string;
+  bucket_path: string;
+}
+
+/**
+ * Attachment as it appears on a persisted message. Note the absence
+ * of `bucket_path` — the server never reveals the storage layout to
+ * widget visitors. Use `Transport.fetchAttachment(messageId, id)` to
+ * fetch the bytes back.
+ */
+export interface WidgetMessageAttachment {
+  id: string;
+  file_name: string;
+  mime_type: string;
+  description: string | null;
 }
 
 export interface ThreadSummary {
@@ -136,14 +162,61 @@ export class Transport {
     return res.json();
   }
 
-  async sendMessage(threadId: string, content: string): Promise<SendMessageResult> {
+  async sendMessage(
+    threadId: string,
+    content: string,
+    attachments?: WidgetAttachment[],
+  ): Promise<SendMessageResult> {
+    const body: { content: string; attachments?: WidgetAttachment[] } = { content };
+    if (attachments && attachments.length > 0) body.attachments = attachments;
     const res = await fetch(this.url(`/threads/${threadId}/messages`), {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`send failed: ${res.status}`);
     return res.json();
+  }
+
+  /**
+   * Upload a file under the current visitor's scope. The returned
+   * descriptor is opaque — pass it through verbatim to the next
+   * `sendMessage` call. The server re-validates the bucket_path on
+   * send so a tampered value is rejected.
+   */
+  async uploadAttachment(file: File): Promise<WidgetAttachment> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const res = await fetch(this.url(`/attachments/upload`), {
+      method: "POST",
+      // Don't set content-type — the browser fills in the multipart
+      // boundary. The x-widget-user-id header is still required.
+      headers: { "x-widget-user-id": this.opts.widgetUserId },
+      body: form,
+    });
+    if (!res.ok) {
+      let detail = "";
+      try { detail = `: ${await res.text()}`; } catch { /* ignore */ }
+      throw new Error(`upload failed: ${res.status}${detail}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Fetch a stored attachment as a Blob. We can't use `<img src=...>`
+   * or `<a href=...>` directly because the request needs the
+   * X-Widget-User-Id header — the path-embedded widget token is not
+   * sufficient on its own (it'd let any visitor of the same widget
+   * read any other visitor's files). The caller should use the
+   * returned blob via `URL.createObjectURL`.
+   */
+  async fetchAttachment(messageId: string, attachmentId: string): Promise<Blob> {
+    const res = await fetch(
+      this.url(`/attachments/${messageId}/${attachmentId}`),
+      { headers: { "x-widget-user-id": this.opts.widgetUserId } },
+    );
+    if (!res.ok) throw new Error(`attachment fetch failed: ${res.status}`);
+    return res.blob();
   }
 
   /**
