@@ -806,13 +806,107 @@ export function mountWidget(args: MountArgs): MountedWidget {
     scrollToBottom();
   }
 
-  function appendTyping(): HTMLDivElement {
+  /**
+   * "Thinking…" placeholder shown between sending and the first byte of
+   * model output. Kept alive until either a content chunk OR a reasoning
+   * chunk arrives — whichever comes first — so the visitor never sees an
+   * empty bubble while the model is reasoning silently.
+   */
+  function appendThinking(): { remove(): void } {
     const el = document.createElement("div");
-    el.className = "ucw-typing";
-    el.textContent = "…";
+    el.className = "ucw-thinking";
+    const dots = document.createElement("span");
+    dots.className = "ucw-thinking-dots";
+    dots.innerHTML = `<span></span><span></span><span></span>`;
+    const label = document.createElement("span");
+    label.textContent = "Thinking";
+    el.appendChild(dots);
+    el.appendChild(label);
     body.appendChild(el);
     scrollToBottom();
-    return el;
+    let removed = false;
+    return {
+      remove() {
+        if (removed) return;
+        removed = true;
+        el.remove();
+      },
+    };
+  }
+
+  /**
+   * Reasoning section attached to an assistant bubble. Live state
+   * streams text into a muted/italic block; `seal()` swaps it for a
+   * collapsed "Thoughts" disclosure when the first answer chunk lands.
+   * Sealing is idempotent.
+   */
+  function makeReasoningSection(bubble: HTMLDivElement) {
+    let container: HTMLDivElement | null = null;
+    let liveEl: HTMLDivElement | null = null;
+    let buf = "";
+    let sealed = false;
+
+    function ensureContainer(): HTMLDivElement {
+      if (container) return container;
+      container = document.createElement("div");
+      container.className = "ucw-reasoning";
+      container.dataset.expanded = "true";
+      liveEl = document.createElement("div");
+      liveEl.className = "ucw-reasoning-live";
+      container.appendChild(liveEl);
+      bubble.prepend(container);
+      return container;
+    }
+
+    return {
+      append(chunk: string) {
+        if (sealed) return;
+        buf += chunk;
+        ensureContainer();
+        if (liveEl) liveEl.textContent = buf;
+        scrollToBottom();
+      },
+      seal() {
+        if (sealed || !container) return;
+        sealed = true;
+        container.innerHTML = "";
+        container.dataset.expanded = "false";
+        const summary = document.createElement("button");
+        summary.type = "button";
+        summary.className = "ucw-reasoning-summary";
+        summary.innerHTML = `${ICONS.chevron}<span>Thoughts</span>`;
+        const body = document.createElement("div");
+        body.className = "ucw-reasoning-body";
+        body.textContent = buf;
+        summary.addEventListener("click", () => {
+          const expanded = container!.dataset.expanded === "true";
+          container!.dataset.expanded = expanded ? "false" : "true";
+        });
+        container.appendChild(summary);
+        container.appendChild(body);
+      },
+    };
+  }
+
+  /** Collapsed reasoning disclosure for a finalized message in history. */
+  function buildHistoryReasoning(text: string): HTMLDivElement {
+    const container = document.createElement("div");
+    container.className = "ucw-reasoning";
+    container.dataset.expanded = "false";
+    const summary = document.createElement("button");
+    summary.type = "button";
+    summary.className = "ucw-reasoning-summary";
+    summary.innerHTML = `${ICONS.chevron}<span>Thoughts</span>`;
+    const bodyEl = document.createElement("div");
+    bodyEl.className = "ucw-reasoning-body";
+    bodyEl.textContent = text;
+    summary.addEventListener("click", () => {
+      const expanded = container.dataset.expanded === "true";
+      container.dataset.expanded = expanded ? "false" : "true";
+    });
+    container.appendChild(summary);
+    container.appendChild(bodyEl);
+    return container;
   }
 
   function scrollToBottom() {
@@ -878,7 +972,13 @@ export function mountWidget(args: MountArgs): MountedWidget {
         }));
         appendUserBubble(m.content, atts);
       } else if (m.role === "assistant" && m.content) {
-        appendAssistantText(m.content);
+        const bubble = appendAssistantText(m.content);
+        // Prepend the collapsed reasoning disclosure if the model
+        // produced a thought summary on this turn. Same shape as the
+        // post-stream sealed state.
+        if (m.reasoning && m.reasoning.trim().length > 0) {
+          bubble.prepend(buildHistoryReasoning(m.reasoning));
+        }
       }
     }
   }
@@ -938,31 +1038,53 @@ export function mountWidget(args: MountArgs): MountedWidget {
       setSending(false);
       return;
     }
-    const typing = appendTyping();
+    const thinking = appendThinking();
     try {
       const threadId = await ensureThread();
       const send = await transport.sendMessage(threadId, text, uploadedDescriptors);
-      typing.remove();
       if (destroyed) return;
-      const bubble = appendAssistantText("");
-      // Stream into a dedicated content child so the tool-activity row
-      // sitting alongside it survives each markdown re-render.
+      // Build the bubble but don't attach it yet — the thinking pill
+      // stays until the first real model output (chunk OR reasoning).
+      const bubble = document.createElement("div");
+      bubble.className = "ucw-bubble ucw-assistant";
+      // Stream into a dedicated content child so reasoning + tool
+      // activity rows sitting alongside it survive each markdown
+      // re-render.
       const contentEl = document.createElement("div");
       bubble.appendChild(contentEl);
       const tools = makeToolActivityTracker(bubble);
+      const reasoning = makeReasoningSection(bubble);
+      let bubbleAttached = false;
       let buf = "";
+
+      const onFirstSignal = () => {
+        if (bubbleAttached) return;
+        bubbleAttached = true;
+        thinking.remove();
+        body.appendChild(bubble);
+        scrollToBottom();
+      };
+
       activeStreamClose = transport.streamMessage(send.assistant_message_id, {
         onChunk(chunk) {
           if (destroyed) return;
+          onFirstSignal();
+          if (!buf) reasoning.seal();
           buf += chunk;
           contentEl.innerHTML = renderMarkdown(buf);
           scrollToBottom();
+        },
+        onReasoning(chunk) {
+          if (destroyed) return;
+          onFirstSignal();
+          reasoning.append(chunk);
         },
         onCommand(command) {
           emit({ type: "command", command });
         },
         onToolCallStarted({ id, fn_name }) {
           if (destroyed) return;
+          onFirstSignal();
           tools.start(id, fn_name);
         },
         onToolCallCompleted({ id }) {
@@ -971,7 +1093,9 @@ export function mountWidget(args: MountArgs): MountedWidget {
         },
         onComplete(msg) {
           if (destroyed) return;
+          onFirstSignal();
           if (msg?.content) {
+            reasoning.seal();
             buf = msg.content;
             contentEl.innerHTML = renderMarkdown(buf);
             scrollToBottom();
@@ -980,6 +1104,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
         onDone() {
           activeStreamClose = null;
           if (destroyed) return;
+          // Race guard: reasoning-only turns still need a visible bubble.
+          onFirstSignal();
           tools.clear();
           emit({ type: "assistant-reply", content: buf });
           setSending(false);
@@ -988,13 +1114,14 @@ export function mountWidget(args: MountArgs): MountedWidget {
           activeStreamClose = null;
           if (destroyed) return;
           tools.clear();
+          thinking.remove();
           appendError(err);
           emit({ type: "error", error: err });
           setSending(false);
         },
       });
     } catch (e: unknown) {
-      typing.remove();
+      thinking.remove();
       const msg = e instanceof Error ? e.message : String(e);
       appendError(msg);
       emit({ type: "error", error: msg });

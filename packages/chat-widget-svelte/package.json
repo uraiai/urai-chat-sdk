@@ -1,6 +1,6 @@
 {
   "name": "@uraiai/chat-widget-svelte",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Svelte 5 component for the Urai chat widget",
   "license": "MIT",
   "type": "module",

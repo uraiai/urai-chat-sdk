@@ -1,6 +1,6 @@
 {
   "name": "@uraiai/chat-widget-react",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "React component for the Urai chat widget",
   "license": "MIT",
   "type": "module",

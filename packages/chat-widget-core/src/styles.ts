@@ -323,6 +323,83 @@ export const baseStyles = `
   font-style: italic;
 }
 
+/* "Thinking…" indicator shown until the first chunk OR first reasoning
+ * chunk lands. Three dots that pulse out of phase. Replaces the plain
+ * ellipsis from ucw-typing; we render an animated dot row plus a label
+ * so the visitor knows we're waiting on the model, not stuck. */
+.ucw-thinking {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--ucw-muted);
+  font-style: italic;
+}
+.ucw-thinking-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.ucw-thinking-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ucw-muted);
+  animation: ucw-thinking-pulse 1.2s ease-in-out infinite;
+}
+.ucw-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.ucw-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes ucw-thinking-pulse {
+  0%, 100% { opacity: 0.35; transform: translateY(0); }
+  50%      { opacity: 1;    transform: translateY(-2px); }
+}
+
+/* Reasoning ("thought summary") sections attached to assistant bubbles.
+ * Live state: an expanded block streaming text as it arrives. Sealed
+ * state: a "Thoughts" disclosure the visitor can click to re-expand. */
+.ucw-reasoning {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--ucw-muted);
+  font-style: italic;
+  line-height: 1.4;
+}
+.ucw-reasoning-live {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.ucw-reasoning-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  color: var(--ucw-muted);
+  font: inherit;
+  font-style: italic;
+}
+.ucw-reasoning-summary:hover { color: var(--ucw-text); }
+.ucw-reasoning-summary svg {
+  width: 10px;
+  height: 10px;
+  transition: transform 0.15s ease;
+}
+.ucw-reasoning[data-expanded="true"] .ucw-reasoning-summary svg {
+  transform: rotate(90deg);
+}
+.ucw-reasoning-body {
+  margin-top: 4px;
+  padding-left: 14px;
+  border-left: 2px solid var(--ucw-border);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.ucw-reasoning[data-expanded="false"] .ucw-reasoning-body { display: none; }
+
 /* ---- Thread switcher dropdown ---- */
 
 .ucw-thread-trigger {
