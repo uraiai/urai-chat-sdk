@@ -1,6 +1,6 @@
 {
   "name": "@uraiai/chat-widget-vue",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Vue 3 component for the Urai chat widget",
   "license": "MIT",
   "type": "module",

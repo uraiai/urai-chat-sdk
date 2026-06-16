@@ -243,6 +243,22 @@ export class Transport {
     es.addEventListener("reasoning", (e) =>
       handlers.onReasoning?.((e as MessageEvent).data),
     );
+    // Tool-call lifecycle. Payloads are minimal — `{id, fn_name}` on
+    // start, `{id, ok}` on completion. Enough for a status pill; the
+    // full args/response stay on the authenticated thread-events
+    // channel which the widget doesn't subscribe to.
+    es.addEventListener("tool_call_started", (e) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data) as { id: string; fn_name: string };
+        handlers.onToolCallStarted?.(data);
+      } catch { /* ignore malformed */ }
+    });
+    es.addEventListener("tool_call_completed", (e) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data) as { id: string; ok: boolean };
+        handlers.onToolCallCompleted?.(data);
+      } catch { /* ignore malformed */ }
+    });
     // uraiJS `sendCommand` relay — the payload is the developer's JSON,
     // verbatim. Forwarded to the host page, never rendered.
     es.addEventListener("command", (e) => {
@@ -298,6 +314,8 @@ export interface StreamHandlers {
   onChunk?: (chunk: string) => void;
   onReasoning?: (chunk: string) => void;
   onCommand?: (command: unknown) => void;
+  onToolCallStarted?: (call: { id: string; fn_name: string }) => void;
+  onToolCallCompleted?: (call: { id: string; ok: boolean }) => void;
   onComplete?: (message: ServerMessage | null) => void;
   onDone?: () => void;
   onError?: (error: string) => void;

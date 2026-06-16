@@ -224,6 +224,26 @@ export const baseStyles = `
 .ucw-pending-chip.ucw-pending-uploading { opacity: 0.7; }
 .ucw-pending-chip.ucw-pending-error { border-color: #dc2626; color: #dc2626; }
 
+.ucw-tool-activity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ucw-muted);
+  margin-bottom: 6px;
+}
+.ucw-tool-activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ucw-primary);
+  animation: ucw-tool-pulse 1s ease-in-out infinite;
+}
+@keyframes ucw-tool-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1); }
+}
+
 .ucw-attachments {
   display: flex;
   flex-wrap: wrap;

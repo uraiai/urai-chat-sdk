@@ -724,6 +724,80 @@ export function mountWidget(args: MountArgs): MountedWidget {
     return el;
   }
 
+  /**
+   * Humanize a raw tool function name. Tool authors name their functions
+   * in snake_case (e.g. `web_search`, `run_code`); the widget surfaces
+   * these to the visitor verbatim aside from a small known-name map and
+   * a generic snake-to-words fallback.
+   */
+  function prettyToolName(fnName: string): string {
+    const KNOWN: Record<string, string> = {
+      web_search: "Searching the web",
+      run_code: "Running code",
+    };
+    if (KNOWN[fnName]) return KNOWN[fnName];
+    const words = fnName.replace(/[_-]+/g, " ").trim();
+    return words ? `Using ${words}` : "Using a tool";
+  }
+
+  /**
+   * Live status row attached to a streaming assistant bubble. Tracks
+   * the set of in-flight tool calls — text reflects the most recent one
+   * because crowding multiple names in a small widget panel reads
+   * worse than a single rolling label. Disappears when the set empties.
+   */
+  function makeToolActivityTracker(bubble: HTMLDivElement) {
+    let row: HTMLDivElement | null = null;
+    let label: HTMLSpanElement | null = null;
+    const inflight = new Map<string, string>();
+    const order: string[] = [];
+
+    function render() {
+      if (inflight.size === 0) {
+        if (row) {
+          row.remove();
+          row = null;
+          label = null;
+        }
+        return;
+      }
+      if (!row) {
+        row = document.createElement("div");
+        row.className = "ucw-tool-activity";
+        const dot = document.createElement("span");
+        dot.className = "ucw-tool-activity-dot";
+        label = document.createElement("span");
+        row.appendChild(dot);
+        row.appendChild(label);
+        bubble.prepend(row);
+      }
+      const latestId = order[order.length - 1];
+      const name = inflight.get(latestId) ?? "Using a tool";
+      if (label) label.textContent = `${name}…`;
+      scrollToBottom();
+    }
+
+    return {
+      start(id: string, fnName: string) {
+        if (!inflight.has(id)) order.push(id);
+        inflight.set(id, prettyToolName(fnName));
+        render();
+      },
+      complete(id: string) {
+        if (!inflight.has(id)) return;
+        inflight.delete(id);
+        const idx = order.indexOf(id);
+        if (idx >= 0) order.splice(idx, 1);
+        render();
+      },
+      clear() {
+        inflight.clear();
+        order.length = 0;
+        render();
+      },
+    };
+  }
+
   function appendError(message: string) {
     const el = document.createElement("div");
     el.className = "ucw-bubble ucw-error";
@@ -871,34 +945,49 @@ export function mountWidget(args: MountArgs): MountedWidget {
       typing.remove();
       if (destroyed) return;
       const bubble = appendAssistantText("");
+      // Stream into a dedicated content child so the tool-activity row
+      // sitting alongside it survives each markdown re-render.
+      const contentEl = document.createElement("div");
+      bubble.appendChild(contentEl);
+      const tools = makeToolActivityTracker(bubble);
       let buf = "";
       activeStreamClose = transport.streamMessage(send.assistant_message_id, {
         onChunk(chunk) {
           if (destroyed) return;
           buf += chunk;
-          bubble.innerHTML = renderMarkdown(buf);
+          contentEl.innerHTML = renderMarkdown(buf);
           scrollToBottom();
         },
         onCommand(command) {
           emit({ type: "command", command });
         },
+        onToolCallStarted({ id, fn_name }) {
+          if (destroyed) return;
+          tools.start(id, fn_name);
+        },
+        onToolCallCompleted({ id }) {
+          if (destroyed) return;
+          tools.complete(id);
+        },
         onComplete(msg) {
           if (destroyed) return;
           if (msg?.content) {
             buf = msg.content;
-            bubble.innerHTML = renderMarkdown(buf);
+            contentEl.innerHTML = renderMarkdown(buf);
             scrollToBottom();
           }
         },
         onDone() {
           activeStreamClose = null;
           if (destroyed) return;
+          tools.clear();
           emit({ type: "assistant-reply", content: buf });
           setSending(false);
         },
         onError(err) {
           activeStreamClose = null;
           if (destroyed) return;
+          tools.clear();
           appendError(err);
           emit({ type: "error", error: err });
           setSending(false);
