@@ -1,6 +1,6 @@
 {
   "name": "@uraiai/chat-widget-core",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Framework-agnostic engine for the Urai chat widget",
   "license": "MIT",
   "type": "module",

@@ -975,13 +975,18 @@ export function mountWidget(args: MountArgs): MountedWidget {
       }
       if (state.threadId) return state.threadId;
     }
-    // First create for this conversation carries the buffered vars
-    // (set via setUser/setVars/startConversation before any message)
-    // and the force_new flag if the user explicitly asked for a new
-    // conversation — without it the server resumes the visitor's
-    // latest thread and "New conversation" becomes a no-op.
-    const createBody: { force_new?: boolean; vars?: WidgetVars } = {};
-    if (state.forceNewOnNextCreate) createBody.force_new = true;
+    // Always force a fresh thread when we reach this point. The two
+    // paths into here are (a) the visitor never had a cached thread,
+    // and (b) the cached one was invalid — in either case the
+    // visitor's expectation is "I'm starting something new." Without
+    // `force_new`, the server quietly resumes the visitor's latest
+    // existing thread, which makes the widget feel like it's
+    // dropping people into a conversation they don't remember.
+    // Visitors who want to resume a past thread pick it from the
+    // dropdown (that path uses `switchToThread`, not this one).
+    const createBody: { force_new?: boolean; vars?: WidgetVars } = {
+      force_new: true,
+    };
     if (state.currentVars) createBody.vars = state.currentVars;
     const result = await transport.createOrResumeThread(createBody);
     state.forceNewOnNextCreate = false;
@@ -1202,34 +1207,47 @@ export function mountWidget(args: MountArgs): MountedWidget {
   }
 
   /**
-   * The first time the panel opens with no active thread, ask the
-   * server for this visitor's threads and resume the most recent one
-   * (matching the Cloudflare-style UX). Subsequent opens skip the fetch
-   * — `cachedThreads` stays populated for the lifetime of the page.
+   * Restore the thread this visitor was last on **in the same
+   * browser/tab session** (via localStorage when
+   * `persistAcrossSessions` is enabled). We deliberately do NOT fall
+   * back to the visitor's most-recent server thread: opening the
+   * widget after a long gap should feel like a fresh conversation,
+   * not a continuation of something the visitor might not remember
+   * starting.
+   *
+   * Idempotent — fires at mount (so inline-mode widgets get their
+   * thread loaded and floating-mode widgets preload before the
+   * visitor clicks the button) and again on `open()` as a race
+   * backstop. `state.threadId` guard makes repeats no-ops.
+   *
+   * `cachedThreads` is preloaded as a side effect for the dropdown,
+   * but we no longer gate the resume decision on it: `listMessages`
+   * is the existence check, and a `listThreads` network blip used to
+   * incorrectly clear the cache and drop visitors to the welcome
+   * screen.
    */
   async function autoRestoreOnOpen() {
     if (!transport || destroyed) return;
     if (state.threadId) return;
-    // The user just asked for a new conversation; don't quietly snap
-    // them back to an old thread when they reopen the panel.
     if (state.forceNewOnNextCreate) return;
-    if (cachedThreads === null) {
-      try {
-        cachedThreads = await transport.listThreads();
-      } catch {
-        cachedThreads = [];
-      }
+    if (!config.behavior.persistAcrossSessions) return;
+    const cachedId = loadThread(widgetToken, state.userId);
+    if (!cachedId) return;
+    // Note: we no longer warm `cachedThreads` here. The dropdown
+    // does its own fetch on first open, so doing it at mount was
+    // just a wasted round-trip for visitors who never open the
+    // switcher — and was breaking opt-outs like `fetchServerConfig:
+    // false` that expect zero network at mount.
+    try {
+      const msgs = await transport.listMessages(cachedId);
+      if (destroyed) return;
+      state.threadId = cachedId;
+      body.innerHTML = "";
+      clearSuggested();
+      renderHistory(msgs);
+    } catch {
+      clearThread(widgetToken, state.userId);
     }
-    if (destroyed || cachedThreads.length === 0) return;
-    // Prefer the localStorage cache if it points at a still-existing
-    // thread; otherwise fall back to the most-recent server thread.
-    const cachedId = config.behavior.persistAcrossSessions
-      ? loadThread(widgetToken, state.userId)
-      : null;
-    const target =
-      (cachedId && cachedThreads.find((t) => t.id === cachedId)) ||
-      cachedThreads[0];
-    if (target) await switchToThread(target.id);
   }
 
   function close() {
@@ -1380,6 +1398,17 @@ export function mountWidget(args: MountArgs): MountedWidget {
   }
 
   render();
+
+  // Restore the previous thread at mount, not just on `open()`. This
+  // covers two cases the open-only hook missed:
+  //   1. Inline mode never calls `open()`, so without this an inline
+  //      widget would always show the welcome screen on mount even
+  //      with a valid localStorage cache.
+  //   2. Floating mode users get history preloaded BEFORE they click
+  //      the button — no welcome-to-history flicker.
+  // The `state.threadId` guard inside `autoRestoreOnOpen` makes the
+  // later `open()` call a safe no-op.
+  void autoRestoreOnOpen();
 
   function destroy() {
     if (destroyed) return;
