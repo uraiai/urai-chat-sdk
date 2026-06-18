@@ -35,6 +35,14 @@ export interface ServerMessage {
   reasoning: string | null;
   created_at: string;
   attachments?: WidgetMessageAttachment[] | null;
+  /**
+   * `<urai-tool-call id="…"/>` marker id → human summary lookup,
+   * used by the markdown renderer to replace markers with a visible
+   * chip in history. Only includes calls whose async summarizer has
+   * landed; markers without a hit fall back to a generic "Code
+   * action" placeholder.
+   */
+  tool_call_summaries?: Record<string, string> | null;
 }
 
 /**
@@ -259,6 +267,16 @@ export class Transport {
         handlers.onToolCallCompleted?.(data);
       } catch { /* ignore malformed */ }
     });
+    // Async one-line summary fired by the server's background
+    // summarizer after a tool finishes. Lets the activity pill swap
+    // its generic "Running code…" label for something descriptive once
+    // the summarizer LLM responds.
+    es.addEventListener("tool_call_summary", (e) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data) as { id: string; summary: string };
+        handlers.onToolCallSummary?.(data);
+      } catch { /* ignore malformed */ }
+    });
     // uraiJS `sendCommand` relay — the payload is the developer's JSON,
     // verbatim. Forwarded to the host page, never rendered.
     es.addEventListener("command", (e) => {
@@ -316,6 +334,7 @@ export interface StreamHandlers {
   onCommand?: (command: unknown) => void;
   onToolCallStarted?: (call: { id: string; fn_name: string }) => void;
   onToolCallCompleted?: (call: { id: string; ok: boolean }) => void;
+  onToolCallSummary?: (call: { id: string; summary: string }) => void;
   onComplete?: (message: ServerMessage | null) => void;
   onDone?: () => void;
   onError?: (error: string) => void;

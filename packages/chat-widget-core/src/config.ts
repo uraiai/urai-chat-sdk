@@ -40,6 +40,15 @@ export interface WidgetBehavior {
   resetOnClose: boolean;
   persistAcrossSessions: boolean;
   newConversationLabel: string;
+  /**
+   * Developer mode. When true, agent-mode code-action fences
+   * (```js-action```) and `<urai-tool-call>` markers are rendered
+   * inline in assistant prose so developers can see exactly what the
+   * agent ran while iterating on prompts/tools. When false (default),
+   * both are stripped — embedders' end-users see the model's
+   * natural-language narration plus the activity pill, never raw code.
+   */
+  dev: boolean;
 }
 
 export interface ResolvedConfig {
@@ -88,6 +97,7 @@ export const DEFAULT_BEHAVIOR: WidgetBehavior = {
   resetOnClose: false,
   persistAcrossSessions: true,
   newConversationLabel: "New conversation",
+  dev: false,
 };
 
 function isObject(v: unknown): v is Record<string, unknown> {

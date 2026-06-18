@@ -106,6 +106,18 @@ export function mountWidget(args: MountArgs): MountedWidget {
   const { shadow, transport, hostElement, widgetToken } = args;
   const previewMode = !!args.previewMode;
   let config = args.config;
+  /**
+   * Renders markdown with `behavior.dev` threaded through every call.
+   * Without dev mode the renderer strips agent-mode code-action fences
+   * and `<urai-tool-call>` markers so embedders' end-users don't see
+   * implementation noise. `config` is reassigned by `applyConfig`, so
+   * we read `config.behavior.dev` at call time rather than capturing
+   * it at mount time.
+   */
+  const renderMd = (
+    text: string,
+    toolSummaries?: Record<string, string>,
+  ) => renderMarkdown(text, { dev: config.behavior.dev, toolSummaries });
 
   // Set by destroy(). Async continuations (auto-restore, stream handlers,
   // preview timers) check it so a torn-down widget never mutates DOM or
@@ -715,10 +727,13 @@ export function mountWidget(args: MountArgs): MountedWidget {
     link.remove();
   }
 
-  function appendAssistantText(text: string): HTMLDivElement {
+  function appendAssistantText(
+    text: string,
+    toolSummaries?: Record<string, string>,
+  ): HTMLDivElement {
     const el = document.createElement("div");
     el.className = "ucw-bubble ucw-assistant";
-    el.innerHTML = renderMarkdown(text);
+    el.innerHTML = renderMd(text, toolSummaries);
     body.appendChild(el);
     scrollToBottom();
     return el;
@@ -746,14 +761,23 @@ export function mountWidget(args: MountArgs): MountedWidget {
    * because crowding multiple names in a small widget panel reads
    * worse than a single rolling label. Disappears when the set empties.
    */
+  interface TrackerEntry {
+    fnName: string;
+    summary?: string;
+    completed: boolean;
+  }
+
   function makeToolActivityTracker(bubble: HTMLDivElement) {
     let row: HTMLDivElement | null = null;
     let label: HTMLSpanElement | null = null;
-    const inflight = new Map<string, string>();
+    // Entries stay in the map even after `complete` so an async
+    // summary arriving later can still replace the generic label.
+    // `clear()` is what evicts them — called on stream done/error.
+    const entries = new Map<string, TrackerEntry>();
     const order: string[] = [];
 
     function render() {
-      if (inflight.size === 0) {
+      if (entries.size === 0) {
         if (row) {
           row.remove();
           row = null;
@@ -772,26 +796,32 @@ export function mountWidget(args: MountArgs): MountedWidget {
         bubble.prepend(row);
       }
       const latestId = order[order.length - 1];
-      const name = inflight.get(latestId) ?? "Using a tool";
-      if (label) label.textContent = `${name}…`;
+      const entry = entries.get(latestId);
+      const name = entry?.summary ?? prettyToolName(entry?.fnName ?? "");
+      if (label) label.textContent = entry?.completed ? name : `${name}…`;
       scrollToBottom();
     }
 
     return {
       start(id: string, fnName: string) {
-        if (!inflight.has(id)) order.push(id);
-        inflight.set(id, prettyToolName(fnName));
+        if (!entries.has(id)) order.push(id);
+        entries.set(id, { fnName, completed: false });
         render();
       },
       complete(id: string) {
-        if (!inflight.has(id)) return;
-        inflight.delete(id);
-        const idx = order.indexOf(id);
-        if (idx >= 0) order.splice(idx, 1);
+        const entry = entries.get(id);
+        if (!entry) return;
+        entry.completed = true;
+        render();
+      },
+      setSummary(id: string, summary: string) {
+        const entry = entries.get(id);
+        if (!entry) return; // late summary for a turn we already cleared
+        entry.summary = summary;
         render();
       },
       clear() {
-        inflight.clear();
+        entries.clear();
         order.length = 0;
         render();
       },
@@ -972,7 +1002,13 @@ export function mountWidget(args: MountArgs): MountedWidget {
         }));
         appendUserBubble(m.content, atts);
       } else if (m.role === "assistant" && m.content) {
-        const bubble = appendAssistantText(m.content);
+        // Pass per-message tool-call summaries so <urai-tool-call>
+        // markers render as visible chips with the LLM-generated
+        // label rather than vanishing silently.
+        const bubble = appendAssistantText(
+          m.content,
+          m.tool_call_summaries ?? undefined,
+        );
         // Prepend the collapsed reasoning disclosure if the model
         // produced a thought summary on this turn. Same shape as the
         // post-stream sealed state.
@@ -1071,7 +1107,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
           onFirstSignal();
           if (!buf) reasoning.seal();
           buf += chunk;
-          contentEl.innerHTML = renderMarkdown(buf);
+          contentEl.innerHTML = renderMd(buf);
           scrollToBottom();
         },
         onReasoning(chunk) {
@@ -1091,13 +1127,17 @@ export function mountWidget(args: MountArgs): MountedWidget {
           if (destroyed) return;
           tools.complete(id);
         },
+        onToolCallSummary({ id, summary }) {
+          if (destroyed) return;
+          tools.setSummary(id, summary);
+        },
         onComplete(msg) {
           if (destroyed) return;
           onFirstSignal();
           if (msg?.content) {
             reasoning.seal();
             buf = msg.content;
-            contentEl.innerHTML = renderMarkdown(buf);
+            contentEl.innerHTML = renderMd(buf);
             scrollToBottom();
           }
         },
@@ -1138,7 +1178,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     const step = () => {
       if (destroyed) return;
       i = Math.min(reply.length, i + 4);
-      bubble.innerHTML = renderMarkdown(reply.slice(0, i));
+      bubble.innerHTML = renderMd(reply.slice(0, i));
       scrollToBottom();
       if (i < reply.length) {
         previewTimer = setTimeout(step, 24);

@@ -244,6 +244,41 @@ export const baseStyles = `
   50%      { opacity: 1;   transform: scale(1); }
 }
 
+/* "I did a thing" chip rendered in history at each <urai-tool-call>
+ * marker position. Distinct from the live activity pill above the
+ * bubble: this one is inline in the message prose and persists. */
+.ucw-tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--ucw-muted);
+  background: var(--ucw-surface);
+  border: 1px solid var(--ucw-border);
+  border-radius: 8px;
+  font-style: italic;
+  line-height: 1.4;
+}
+.ucw-tool-summary::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ucw-primary);
+  flex: 0 0 auto;
+}
+.ucw-tool-summary-pending {
+  opacity: 0.7;
+}
+.ucw-tool-summary-dev {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-style: normal;
+  font-size: 11px;
+}
+
 .ucw-attachments {
   display: flex;
   flex-wrap: wrap;
