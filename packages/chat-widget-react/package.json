@@ -1,11 +1,13 @@
 {
   "name": "@uraiai/chat-widget-react",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "React component for the Urai chat widget",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -35,7 +37,13 @@
   "publishConfig": {
     "access": "public"
   },
-  "keywords": ["urai", "chat", "widget", "chatbot", "react"],
+  "keywords": [
+    "urai",
+    "chat",
+    "widget",
+    "chatbot",
+    "react"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/uraiai/urai-chat-sdk",
