@@ -53,7 +53,7 @@ pnpm typecheck
 packages. Each needs a `.env.local`:
 
 ```
-VITE_URAI_BASE_URL=http://localhost:4545
+VITE_URAI_BASE_URL=https://chat.app.urai.dev
 VITE_URAI_WIDGET_TOKEN=<widget token>
 ```
 
