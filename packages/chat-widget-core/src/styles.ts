@@ -71,6 +71,9 @@ export const baseStyles = `
 .ucw-root[data-mode="floating"][data-position="bottom-right"] .ucw-panel { right: 0; }
 .ucw-root[data-mode="floating"][data-position="bottom-left"]  .ucw-panel { left: 0; }
 
+.ucw-root[data-mode="inline"] { 
+    height: 100%;
+}
 .ucw-root[data-mode="inline"] .ucw-panel { 
     width: 100%; 
     height: 100%;
