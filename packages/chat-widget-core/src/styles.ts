@@ -112,7 +112,7 @@ export const baseStyles = `
   padding: 10px 12px;
   border-radius: 12px;
   max-width: 85%;
-  white-space: pre-wrap;
+  white-space: normal;
   word-wrap: break-word;
   font-size: 14px;
 }
