@@ -748,6 +748,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
   function prettyToolName(fnName: string): string {
     const KNOWN: Record<string, string> = {
       web_search: "Searching the web",
+      write: "Writing a script",
+      execute: "Running code",
       run_code: "Running code",
     };
     if (KNOWN[fnName]) return KNOWN[fnName];
