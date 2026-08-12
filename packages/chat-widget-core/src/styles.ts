@@ -66,18 +66,24 @@ export const baseStyles = `
 }
 .ucw-root[data-mode="floating"] .ucw-panel {
   position: absolute;
-  bottom: 64px;
+  /* Flush with the root's own 20px viewport offset rather than clearing the
+   * launcher. Opening the panel always hides the launcher (ui.ts keeps the
+   * two mutually exclusive), so reserving its height here only ever pushed
+   * the panel 64px up the page for no one. */
+  bottom: 0;
 }
 .ucw-root[data-mode="floating"][data-position="bottom-right"] .ucw-panel { right: 0; }
 .ucw-root[data-mode="floating"][data-position="bottom-left"]  .ucw-panel { left: 0; }
 
-.ucw-root[data-mode="inline"] { 
-    height: 100%;
+/* Inline mode fills its host container rather than the fixed --ucw-h box,
+ * so an embedder sizing the container gets a panel that follows it. */
+.ucw-root[data-mode="inline"] {
+  height: 100%;
 }
-.ucw-root[data-mode="inline"] .ucw-panel { 
-    width: 100%; 
-    height: 100%;
-    max-height: none;
+.ucw-root[data-mode="inline"] .ucw-panel {
+  width: 100%;
+  height: 100%;
+  max-height: none;
 }
 
 .ucw-header {
@@ -111,9 +117,19 @@ export const baseStyles = `
 .ucw-bubble {
   padding: 10px 12px;
   border-radius: 12px;
-  max-width: 85%;
+  /* Near-full width. At 380px the old 85% stranded ~52px on every
+   * message; user bubbles still read as "mine" from their colour and
+   * right alignment, so width is not carrying that signal. */
+  max-width: 98%;
+  /* The bubble is filled with rendered markdown HTML, not raw text, so
+   * pre-wrap would preserve the newlines marked emits *between* tags and
+   * render each as a blank line. marked already runs with breaks:true, so
+   * soft newlines in the model's prose survive as <br> regardless. */
   white-space: normal;
-  word-wrap: break-word;
+  /* "anywhere", not break-word: only this value lets a long URL or token
+   * shrink the element's min-content width, which is what stops it
+   * forcing the flex row wider than the panel. */
+  overflow-wrap: anywhere;
   font-size: 14px;
 }
 .ucw-bubble.ucw-user {
@@ -134,17 +150,76 @@ export const baseStyles = `
   color: #dc2626;
   font-size: 13px;
 }
-.ucw-bubble p:first-child { margin-top: 0; }
-.ucw-bubble p:last-child { margin-bottom: 0; }
+/* ---- Markdown reset ------------------------------------------------
+ * Everything below is rendered from the model's markdown, so without
+ * these rules it runs on UA defaults tuned for an 8.5" document rather
+ * than a 380px panel. Two things matter at this width: block margins
+ * (a UA <p> pays 1em top and bottom, and marked emits loose lists, so
+ * every <li> wraps its content in one) and inline indents (a UA <ul>
+ * spends 40px — 17% of the panel — before the first character).
+ * Font sizes are deliberately left at the inherited 14px. */
+
+/* Matches every block type, not just <p> — messages often open with a
+ * list or a heading, which the old p:first-child form missed. */
+.ucw-bubble > :first-child { margin-top: 0; }
+.ucw-bubble > :last-child { margin-bottom: 0; }
+
+.ucw-bubble p { margin: 8px 0; }
+.ucw-bubble ul,
+.ucw-bubble ol { margin: 6px 0; padding-left: 18px; }
+/* Loose lists nest a <p> inside each <li>; left alone that is 28px of
+ * dead space between two one-line bullets. */
+.ucw-bubble li > p { margin: 0; }
+.ucw-bubble li + li { margin-top: 3px; }
+.ucw-bubble blockquote {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--ucw-border);
+}
+/* 1em, not the UA scale: an h2 in a reply would otherwise render at
+ * 24px and wrap to three lines. Weight and spacing carry the level. */
+.ucw-bubble h1, .ucw-bubble h2, .ucw-bubble h3,
+.ucw-bubble h4, .ucw-bubble h5, .ucw-bubble h6 {
+  margin: 10px 0 4px;
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.ucw-bubble hr {
+  margin: 8px 0;
+  border: none;
+  border-top: 1px solid var(--ucw-border);
+}
 .ucw-bubble pre {
   background: rgba(0,0,0,0.06);
   padding: 8px;
   border-radius: 6px;
   overflow-x: auto;
+  max-width: 100%;
+  margin: 6px 0;
+  line-height: 1.4;
   font-size: 12px;
 }
 .ucw-bubble code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .ucw-bubble a { color: var(--ucw-primary); }
+.ucw-bubble img { max-width: 100%; height: auto; border-radius: 6px; }
+/* display:block turns the table into its own scroll container so a wide
+ * one scrolls itself instead of widening the panel. */
+.ucw-bubble table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 13px;
+}
+.ucw-bubble th, .ucw-bubble td {
+  padding: 4px 8px;
+  border: 1px solid var(--ucw-border);
+  text-align: left;
+  white-space: nowrap;
+}
+.ucw-bubble th { font-weight: 600; background: var(--ucw-surface); }
 
 .ucw-suggested {
   display: flex;
@@ -259,8 +334,8 @@ export const baseStyles = `
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 6px 0;
-  padding: 6px 10px;
+  margin: 4px 0;
+  padding: 4px 8px;
   font-size: 12px;
   color: var(--ucw-muted);
   background: var(--ucw-surface);
@@ -278,9 +353,14 @@ export const baseStyles = `
   background: var(--ucw-primary);
   flex: 0 0 auto;
 }
+/* No summary populated yet — usually a freshly-completed turn where
+ * the async summarizer hasn't landed. Slightly dimmed so it reads
+ * as "transient" rather than "this is the final state". */
 .ucw-tool-summary-pending {
   opacity: 0.7;
 }
+/* Dev mode adds the row id prefix; render the chip in a slightly
+ * different family so devs can spot it during prompt iteration. */
 .ucw-tool-summary-dev {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-style: normal;
