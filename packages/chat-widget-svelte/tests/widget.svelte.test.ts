@@ -6,7 +6,7 @@ import {
   installFakeEventSource,
   installFakeFetch,
   flushAsync,
-} from "../../chat-widget-core/tests/helpers";
+} from "@uraiai/chat-test-support";
 
 const TOKEN = "11111111-2222-3333-4444-555555555555";
 const TOKEN2 = "99999999-2222-3333-4444-555555555555";

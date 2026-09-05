@@ -7,6 +7,7 @@
   "sideEffects": false,
   "files": ["dist"],
   "exports": {
+    "./package.json": "./package.json",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -25,6 +26,7 @@
     "vue": "^3.3.0"
   },
   "devDependencies": {
+    "@uraiai/chat-test-support": "workspace:*",
     "@vue/test-utils": "^2.4.6",
     "tsup": "^8.3.5",
     "typescript": "^5.9.2",

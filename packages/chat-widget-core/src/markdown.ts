@@ -19,8 +19,27 @@ const md = new Marked({ breaks: true, gfm: true });
  * close fence re-strips cleanly. Avoids a flash of half-code mid-stream.
  */
 export function stripJsActionFences(text: string): string {
-  const re = /(^|\n)```js-action[^\n]*\n([\s\S]*?)(?:```|$)/g;
-  return text.replace(re, (_full, lead: string) => lead);
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (!/^\s{0,3}```js-action[^\n]*$/.test(lines[i])) {
+      out.push(lines[i]);
+      i += 1;
+      continue;
+    }
+    // Scan line-wise for a *bare* closing fence. A line like ```svg carries
+    // an info string, so CommonMark treats it as opening a new block rather
+    // than closing this one — matching the first ``` anywhere (as a regex
+    // over the whole string does) ends the strip early and spills the rest
+    // of the code action, SVG included, into the visible prose.
+    let j = i + 1;
+    while (j < lines.length && !/^\s{0,3}`{3,}\s*$/.test(lines[j])) j += 1;
+    // Unterminated (still streaming): swallow to the end. The next render
+    // arrives with the close fence and strips cleanly.
+    i = j < lines.length ? j + 1 : lines.length;
+  }
+  return out.join("\n");
 }
 
 /**
@@ -106,33 +125,127 @@ function sanitizeSvg(raw: string): string | null {
   }
 }
 
+/** The placeholder a resolved SVG leaves behind, as a standalone block. */
+function svgPlaceholder(index: number): string {
+  return `\n\n<div class="ucw-svg" data-ucw-svg="${index}"></div>\n\n`;
+}
+
+/** The placeholder for an SVG that is still streaming or would not sanitize. */
+function svgPendingPlaceholder(closed: boolean): string {
+  const label = closed ? "Could not render SVG" : "Rendering SVG\u2026";
+  return `\n\n<div class="ucw-svg ucw-svg-pending">${label}</div>\n\n`;
+}
+
 /**
- * Pull SVG code fences out of the prose and leave a placeholder `<div>`
- * behind, so the markdown pass never sees (and DOMPurify's HTML profile
- * never strips) the SVG markup. `injectSvgs` puts the sanitized documents
- * back after the markdown sanitize.
+ * Index just past the `</svg>` that closes the element opening at `start`,
+ * or -1 if it never closes.
  *
- * A fence counts as SVG when its info string is `svg`, or when it is
- * `xml`/`html`/absent and the body parses as an SVG document — the same
- * rule the threads chat view applies before swapping a code block for a
- * live preview.
- *
- * An unterminated fence (still streaming) becomes a pending placeholder
- * rather than half-rendered markup: partial SVG source flashing into the
- * bubble reads as garbage, and the next render closes the fence.
+ * Counts depth rather than taking the first `</svg>`, because nested `<svg>`
+ * elements are legal and common in generated charts. A self-closing `<svg/>`
+ * opens nothing.
  */
-function extractSvgFences(text: string): { text: string; svgs: string[] } {
+function findSvgEnd(text: string, start: number): number {
+  const tag = /<svg\b|<\/svg\s*>/gi;
+  tag.lastIndex = start;
+  let depth = 0;
+  let m: RegExpExecArray | null;
+  while ((m = tag.exec(text))) {
+    if (m[0].toLowerCase().startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) return m.index + m[0].length;
+    } else {
+      // Find this start tag's own `>` to see whether it self-closes.
+      const gt = text.indexOf(">", m.index);
+      if (gt === -1) return -1;
+      if (text[gt - 1] !== "/") depth += 1;
+      tag.lastIndex = gt + 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Pull raw, unfenced `<svg>…</svg>` documents out of prose.
+ *
+ * The agent writes charts as bare SVG in the message body, not inside a code
+ * fence — so without this the markup reaches the markdown pass, whose
+ * DOMPurify HTML profile drops the entire subtree and the visitor sees
+ * nothing at all. The threads chat view renders it because react-markdown's
+ * `rehype-raw` parses raw HTML straight into the tree; this is the widget's
+ * equivalent, with the SVG profile doing the sanitizing.
+ *
+ * Only called on text outside code fences, so ```svg blocks keep their own
+ * handling and a fence that *quotes* SVG source still renders as code.
+ */
+function extractRawSvg(text: string, svgs: string[]): string {
+  if (!/<svg[\s>]/i.test(text)) return text;
+
+  const open = /<svg[\s>]/gi;
+  let out = "";
+  let i = 0;
+  for (;;) {
+    open.lastIndex = i;
+    const m = open.exec(text);
+    if (!m) {
+      out += text.slice(i);
+      return out;
+    }
+    out += text.slice(i, m.index);
+
+    const end = findSvgEnd(text, m.index);
+    if (end === -1) {
+      // Still streaming. Swallow the rest rather than letting half an SVG
+      // document render as text; the next render closes the element.
+      return out + svgPendingPlaceholder(false);
+    }
+
+    const clean = sanitizeSvg(text.slice(m.index, end));
+    out += clean
+      ? svgPlaceholder(svgs.push(clean) - 1)
+      : svgPendingPlaceholder(true);
+    i = end;
+  }
+}
+
+/**
+ * Pull SVG out of the prose and leave a placeholder `<div>` behind, so the
+ * markdown pass never sees (and DOMPurify's HTML profile never strips) the
+ * SVG markup. `injectSvgs` puts the sanitized documents back after the
+ * markdown sanitize.
+ *
+ * Two shapes qualify. A **fence** counts as SVG when its info string is
+ * `svg`, or when it is `xml`/`html`/absent and the body parses as an SVG
+ * document — the same rule the threads chat view applies before swapping a
+ * code block for a live preview. **Raw, unfenced** `<svg>` in the prose
+ * counts too, which is how the agent actually emits charts.
+ *
+ * An unterminated fence or element (still streaming) becomes a pending
+ * placeholder rather than half-rendered markup: partial SVG source flashing
+ * into the bubble reads as garbage, and the next render closes it.
+ */
+function extractSvgs(text: string): { text: string; svgs: string[] } {
   const svgs: string[] = [];
   const lines = text.split("\n");
   const out: string[] = [];
+
+  // Raw SVG is only extracted from the runs *between* fences, so that a
+  // fence quoting SVG source still renders as code.
+  let plain: string[] = [];
+  const flushPlain = () => {
+    if (!plain.length) return;
+    out.push(extractRawSvg(plain.join("\n"), svgs));
+    plain = [];
+  };
+
   let i = 0;
   while (i < lines.length) {
     const open = /^(\s{0,3})(`{3,})([^`]*)$/.exec(lines[i]);
     if (!open) {
-      out.push(lines[i]);
+      plain.push(lines[i]);
       i += 1;
       continue;
     }
+    flushPlain();
     const fence = open[2];
     const info = open[3].trim().split(/\s+/)[0].toLowerCase();
     const closeRe = new RegExp("^\\s{0,3}" + fence + "`*\\s*$");
@@ -144,26 +257,23 @@ function extractSvgFences(text: string): { text: string; svgs: string[] } {
       info === "svg" ||
       ((info === "" || info === "xml" || info === "html") && looksLikeSvg(body));
     if (!isSvg) {
-      out.push(...lines.slice(i, closed ? j + 1 : lines.length));
+      out.push(lines.slice(i, closed ? j + 1 : lines.length).join("\n"));
       i = closed ? j + 1 : lines.length;
       continue;
     }
     const clean = closed ? sanitizeSvg(body) : null;
-    if (clean) {
-      out.push("", `<div class="ucw-svg" data-ucw-svg="${svgs.length}"></div>`, "");
-      svgs.push(clean);
-    } else {
-      // Still streaming, or the block never sanitized down to a usable
-      // document. Either way, show a placeholder instead of the source.
-      const label = closed ? "Could not render SVG" : "Rendering SVG\u2026";
-      out.push("", `<div class="ucw-svg ucw-svg-pending">${label}</div>`, "");
-    }
+    // Still streaming, or the block never sanitized down to a usable
+    // document? Show a placeholder instead of the source.
+    out.push(
+      clean ? svgPlaceholder(svgs.push(clean) - 1) : svgPendingPlaceholder(closed),
+    );
     i = closed ? j + 1 : lines.length;
   }
+  flushPlain();
   return { text: out.join("\n"), svgs };
 }
 
-/** Fill the placeholders left by `extractSvgFences` with the sanitized SVGs. */
+/** Fill the placeholders left by `extractSvgs` with the sanitized SVGs. */
 function injectSvgs(html: string, svgs: string[]): string {
   if (!svgs.length) return html;
   return html.replace(
@@ -215,12 +325,13 @@ export function renderMarkdown(
   } else {
     prepared = devReplaceMarkers(prepared, opts.toolSummaries);
   }
-  // SVG fences come out before the markdown pass — its DOMPurify config
-  // runs the HTML profile, which would drop the whole `<svg>` subtree.
+  // SVG comes out before the markdown pass — its DOMPurify config runs the
+  // HTML profile, which would drop the whole `<svg>` subtree. Fenced and raw
+  // both, since the agent emits charts as bare `<svg>` in the prose.
   // They go back in (already sanitized with the SVG profile) afterwards.
   // Runs after the js-action strip so code actions that happen to embed
   // an SVG fence stay stripped rather than rendering.
-  const { text: withoutSvg, svgs } = extractSvgFences(prepared);
+  const { text: withoutSvg, svgs } = extractSvgs(prepared);
   const html = md.parse(withoutSvg, { async: false }) as string;
   const safe = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },

@@ -7,9 +7,22 @@
   "sideEffects": false,
   "files": ["dist"],
   "exports": {
+    "./package.json": "./package.json",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./headless": {
+      "types": "./dist/headless.d.ts",
+      "import": "./dist/headless.js"
+    },
+    "./markdown": {
+      "types": "./dist/markdown.d.ts",
+      "import": "./dist/markdown.js"
+    },
+    "./theme": {
+      "types": "./dist/theme.d.ts",
+      "import": "./dist/theme.js"
     }
   },
   "main": "./dist/index.js",
@@ -23,6 +36,7 @@
     "marked": "^16.0.0"
   },
   "devDependencies": {
+    "@uraiai/chat-test-support": "workspace:*",
     "tsup": "^8.3.5",
     "typescript": "^5.9.2"
   },

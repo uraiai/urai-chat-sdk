@@ -1,0 +1,120 @@
+/*
+ * Host page styling only. The widget brings its own stylesheet — the
+ * point of the "unstyled" skin below is to show what it looks like when
+ * you turn that off and supply your own.
+ */
+:root {
+  --bg: #f8fafc;
+  --fg: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --card: #ffffff;
+  color-scheme: light;
+}
+:root[data-host-theme="dark"] {
+  --bg: #0b1220;
+  --fg: #e2e8f0;
+  --muted: #94a3b8;
+  --line: #1e293b;
+  --card: #111a2e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.page {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 24px;
+  padding: 24px;
+  height: 100dvh;
+}
+
+.panel {
+  overflow-y: auto;
+  padding-right: 8px;
+}
+.panel h1 { font-size: 18px; margin: 0 0 4px; }
+.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin: 0 0 8px; }
+.panel section { margin-top: 24px; }
+.hint { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+code { background: color-mix(in oklab, var(--fg) 8%, transparent); padding: 1px 4px; border-radius: 4px; }
+
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+button {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: inherit;
+  cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+
+pre.vars, pre.log {
+  margin: 0;
+  padding: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+pre.log { max-height: 240px; overflow-y: auto; margin-top: 8px; }
+
+.stage { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.blocked {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 14px; border-radius: 10px;
+  border: 1px solid #dc2626; color: #b91c1c;
+  background: color-mix(in oklab, #dc2626 8%, transparent);
+  font-size: 13px;
+}
+/*
+ * The chat fills whatever box the host sizes — that is the whole
+ * contract for the inline component.
+ */
+.frame {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--card);
+}
+
+/* --- the "branded" skin: appended classes, not replacements --- */
+.demo-header-wrap { border-bottom: 3px solid #f59e0b; }
+.demo-composer { background: color-mix(in oklab, #0f766e 6%, transparent); }
+.demo-empty {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 24px; text-align: center; color: var(--muted);
+}
+.demo-empty strong { color: var(--fg); font-size: 15px; }
+
+/* --- the "unstyled" skin: every default class dropped, this is all of it --- */
+.u-root { display: flex; flex-direction: column; height: 100%; background: var(--card); }
+.u-header { padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.u-viewport { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+.u-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.u-msg { max-width: 80%; padding: 8px 12px; border-radius: 12px; }
+.u-msg-user { align-self: flex-end; background: #1d4ed8; color: white; }
+.u-msg-assistant { align-self: flex-start; background: color-mix(in oklab, var(--fg) 8%, transparent); }
+.u-composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+.u-input { flex: 1; resize: none; font: inherit; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: inherit; }
+.u-send { background: #1d4ed8; color: white; border: 0; border-radius: 8px; padding: 8px 12px; }
+
+@media (max-width: 900px) {
+  .page { grid-template-columns: 1fr; height: auto; }
+  .frame { height: 70dvh; }
+}

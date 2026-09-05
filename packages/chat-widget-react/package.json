@@ -4,13 +4,21 @@
   "description": "React component for the Urai chat widget",
   "license": "MIT",
   "type": "module",
-  "sideEffects": false,
-  "files": ["dist"],
+  "sideEffects": ["*.css"],
+  "files": [
+    "dist"
+  ],
   "exports": {
+    "./package.json": "./package.json",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./ui": {
+      "types": "./dist/ui.d.ts",
+      "import": "./dist/ui.js"
+    },
+    "./styles.css": "./dist/styles.css"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,14 +27,21 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@uraiai/chat-widget-core": "workspace:^"
+    "@uraiai/chat-widget-core": "workspace:^",
+    "react-markdown": "^9",
+    "rehype-raw": "^7",
+    "rehype-sanitize": "^6",
+    "remark-gfm": "^4",
+    "unist-util-visit": "^5"
   },
   "peerDependencies": {
     "react": ">=18 <20"
   },
   "devDependencies": {
     "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14",
     "@types/react": "^19.0.0",
+    "@uraiai/chat-test-support": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.3.5",
@@ -35,7 +50,13 @@
   "publishConfig": {
     "access": "public"
   },
-  "keywords": ["urai", "chat", "widget", "chatbot", "react"],
+  "keywords": [
+    "urai",
+    "chat",
+    "widget",
+    "chatbot",
+    "react"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/uraiai/urai-chat-sdk",

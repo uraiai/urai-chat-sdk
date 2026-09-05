@@ -15,6 +15,14 @@ import { clearThread, loadThread, saveThread } from "./session";
 import type { WidgetEvent } from "./events";
 import { applyTheme } from "./theme";
 import { baseStyles } from "./styles";
+// Framework-agnostic models. This file owns the DOM; these own the state.
+import { createToolActivity } from "./headless/tool-activity";
+import { createReasoning } from "./headless/reasoning";
+import {
+  filterThreads,
+  groupByRecency,
+  relativeTime,
+} from "./headless/thread-list";
 
 interface MountArgs {
   shadow: ShadowRoot;
@@ -343,14 +351,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     if (!list) return;
     list.innerHTML = "";
 
-    const items = (cachedThreads ?? []).filter((t) => {
-      if (!filter.trim()) return true;
-      const q = filter.toLowerCase();
-      return (
-        t.title.toLowerCase().includes(q) ||
-        (t.last_message_preview ?? "").toLowerCase().includes(q)
-      );
-    });
+    const items = filterThreads(cachedThreads ?? [], filter);
 
     if (items.length === 0) {
       const empty = document.createElement("div");
@@ -422,46 +423,6 @@ export function mountWidget(args: MountArgs): MountedWidget {
       if (destroyed) return;
       appendError(e instanceof Error ? e.message : String(e));
     }
-  }
-
-  function groupByRecency(
-    items: ThreadSummary[],
-  ): Array<[string, ThreadSummary[]]> {
-    const now = Date.now();
-    const ONE_DAY = 24 * 60 * 60 * 1000;
-    const groups: Record<string, ThreadSummary[]> = {
-      Today: [],
-      "Past week": [],
-      Older: [],
-    };
-    const order = ["Today", "Past week", "Older"];
-    for (const t of items) {
-      const when = new Date(t.last_message_at ?? t.updated_at).getTime();
-      const age = now - when;
-      if (age < ONE_DAY) groups["Today"].push(t);
-      else if (age < 7 * ONE_DAY) groups["Past week"].push(t);
-      else groups["Older"].push(t);
-    }
-    return order
-      .map((k): [string, ThreadSummary[]] => [k, groups[k]])
-      .filter(([, g]) => g.length > 0);
-  }
-
-  function relativeTime(iso: string): string {
-    const then = new Date(iso).getTime();
-    const diff = Date.now() - then;
-    if (diff < 0) return "just now";
-    const s = Math.floor(diff / 1000);
-    if (s < 60) return `${s}s ago`;
-    const m = Math.floor(s / 60);
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    const d = Math.floor(h / 24);
-    if (d < 30) return `${d}d ago`;
-    const mo = Math.floor(d / 30);
-    if (mo < 12) return `${mo}mo ago`;
-    return `${Math.floor(mo / 12)}y ago`;
   }
 
   function buildComposer(): HTMLDivElement {
@@ -740,46 +701,20 @@ export function mountWidget(args: MountArgs): MountedWidget {
   }
 
   /**
-   * Humanize a raw tool function name. Tool authors name their functions
-   * in snake_case (e.g. `web_search`, `run_code`); the widget surfaces
-   * these to the visitor verbatim aside from a small known-name map and
-   * a generic snake-to-words fallback.
+   * Live status row attached to a streaming assistant bubble. The set of
+   * in-flight tool calls is modelled in `headless/tool-activity`; this is
+   * the DOM adapter over it. Text reflects the most recent call because
+   * crowding multiple names into a small widget panel reads worse than a
+   * single rolling label. Disappears when the set empties.
    */
-  function prettyToolName(fnName: string): string {
-    const KNOWN: Record<string, string> = {
-      web_search: "Searching the web",
-      write: "Writing a script",
-      execute: "Running code",
-      run_code: "Running code",
-    };
-    if (KNOWN[fnName]) return KNOWN[fnName];
-    const words = fnName.replace(/[_-]+/g, " ").trim();
-    return words ? `Using ${words}` : "Using a tool";
-  }
-
-  /**
-   * Live status row attached to a streaming assistant bubble. Tracks
-   * the set of in-flight tool calls — text reflects the most recent one
-   * because crowding multiple names in a small widget panel reads
-   * worse than a single rolling label. Disappears when the set empties.
-   */
-  interface TrackerEntry {
-    fnName: string;
-    summary?: string;
-    completed: boolean;
-  }
-
   function makeToolActivityTracker(bubble: HTMLDivElement) {
+    const model = createToolActivity();
     let row: HTMLDivElement | null = null;
     let label: HTMLSpanElement | null = null;
-    // Entries stay in the map even after `complete` so an async
-    // summary arriving later can still replace the generic label.
-    // `clear()` is what evicts them — called on stream done/error.
-    const entries = new Map<string, TrackerEntry>();
-    const order: string[] = [];
 
     function render() {
-      if (entries.size === 0) {
+      const snapshot = model.snapshot();
+      if (!snapshot) {
         if (row) {
           row.remove();
           row = null;
@@ -797,34 +732,29 @@ export function mountWidget(args: MountArgs): MountedWidget {
         row.appendChild(label);
         bubble.prepend(row);
       }
-      const latestId = order[order.length - 1];
-      const entry = entries.get(latestId);
-      const name = entry?.summary ?? prettyToolName(entry?.fnName ?? "");
-      if (label) label.textContent = entry?.completed ? name : `${name}…`;
+      if (label) {
+        label.textContent = snapshot.completed
+          ? snapshot.label
+          : `${snapshot.label}…`;
+      }
       scrollToBottom();
     }
 
     return {
       start(id: string, fnName: string) {
-        if (!entries.has(id)) order.push(id);
-        entries.set(id, { fnName, completed: false });
+        model.start(id, fnName);
         render();
       },
       complete(id: string) {
-        const entry = entries.get(id);
-        if (!entry) return;
-        entry.completed = true;
+        model.complete(id);
         render();
       },
       setSummary(id: string, summary: string) {
-        const entry = entries.get(id);
-        if (!entry) return; // late summary for a turn we already cleared
-        entry.summary = summary;
+        model.setSummary(id, summary);
         render();
       },
       clear() {
-        entries.clear();
-        order.length = 0;
+        model.clear();
         render();
       },
     };
@@ -870,13 +800,13 @@ export function mountWidget(args: MountArgs): MountedWidget {
    * Reasoning section attached to an assistant bubble. Live state
    * streams text into a muted/italic block; `seal()` swaps it for a
    * collapsed "Thoughts" disclosure when the first answer chunk lands.
-   * Sealing is idempotent.
+   * Accumulation and the idempotent seal live in `headless/reasoning`;
+   * this is the DOM adapter over that model.
    */
   function makeReasoningSection(bubble: HTMLDivElement) {
+    const model = createReasoning();
     let container: HTMLDivElement | null = null;
     let liveEl: HTMLDivElement | null = null;
-    let buf = "";
-    let sealed = false;
 
     function ensureContainer(): HTMLDivElement {
       if (container) return container;
@@ -892,15 +822,15 @@ export function mountWidget(args: MountArgs): MountedWidget {
 
     return {
       append(chunk: string) {
-        if (sealed) return;
-        buf += chunk;
+        if (model.snapshot().sealed) return;
+        model.append(chunk);
         ensureContainer();
-        if (liveEl) liveEl.textContent = buf;
+        if (liveEl) liveEl.textContent = model.snapshot().text;
         scrollToBottom();
       },
       seal() {
-        if (sealed || !container) return;
-        sealed = true;
+        if (model.snapshot().sealed || !container) return;
+        model.seal();
         container.innerHTML = "";
         container.dataset.expanded = "false";
         const summary = document.createElement("button");
@@ -909,7 +839,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
         summary.innerHTML = `${ICONS.chevron}<span>Thoughts</span>`;
         const body = document.createElement("div");
         body.className = "ucw-reasoning-body";
-        body.textContent = buf;
+        body.textContent = model.snapshot().text;
         summary.addEventListener("click", () => {
           const expanded = container!.dataset.expanded === "true";
           container!.dataset.expanded = expanded ? "false" : "true";
