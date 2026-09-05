@@ -72,6 +72,109 @@ function devReplaceMarkers(
   });
 }
 
+/**
+ * True when a fenced block's body is an SVG document — same detection the
+ * threads chat view uses: strip a BOM / XML declaration / doctype / leading
+ * comments, then require the first tag to be `<svg`.
+ */
+function looksLikeSvg(raw: string): boolean {
+  const stripped = raw
+    .replace(/^\uFEFF/, "")
+    .replace(/<\?xml[^?]*\?>/i, "")
+    .replace(/<!DOCTYPE[^>]*>/i, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .trimStart();
+  return /^<svg[\s>]/i.test(stripped);
+}
+
+/**
+ * Sanitize an SVG document for inline rendering. Uses DOMPurify's SVG
+ * profiles (the markdown pass runs the HTML profile, which would drop the
+ * whole element), so scripts, event handlers and foreign objects are
+ * stripped while shapes, gradients and filters survive. Returns null when
+ * the input isn't an SVG or sanitizes down to nothing.
+ */
+function sanitizeSvg(raw: string): string | null {
+  if (!/<svg[\s>]/i.test(raw)) return null;
+  try {
+    const clean = DOMPurify.sanitize(raw, {
+      USE_PROFILES: { svg: true, svgFilters: true },
+    });
+    return clean.trim() ? clean : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pull SVG code fences out of the prose and leave a placeholder `<div>`
+ * behind, so the markdown pass never sees (and DOMPurify's HTML profile
+ * never strips) the SVG markup. `injectSvgs` puts the sanitized documents
+ * back after the markdown sanitize.
+ *
+ * A fence counts as SVG when its info string is `svg`, or when it is
+ * `xml`/`html`/absent and the body parses as an SVG document — the same
+ * rule the threads chat view applies before swapping a code block for a
+ * live preview.
+ *
+ * An unterminated fence (still streaming) becomes a pending placeholder
+ * rather than half-rendered markup: partial SVG source flashing into the
+ * bubble reads as garbage, and the next render closes the fence.
+ */
+function extractSvgFences(text: string): { text: string; svgs: string[] } {
+  const svgs: string[] = [];
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const open = /^(\s{0,3})(`{3,})([^`]*)$/.exec(lines[i]);
+    if (!open) {
+      out.push(lines[i]);
+      i += 1;
+      continue;
+    }
+    const fence = open[2];
+    const info = open[3].trim().split(/\s+/)[0].toLowerCase();
+    const closeRe = new RegExp("^\\s{0,3}" + fence + "`*\\s*$");
+    let j = i + 1;
+    while (j < lines.length && !closeRe.test(lines[j])) j += 1;
+    const closed = j < lines.length;
+    const body = lines.slice(i + 1, closed ? j : lines.length).join("\n");
+    const isSvg =
+      info === "svg" ||
+      ((info === "" || info === "xml" || info === "html") && looksLikeSvg(body));
+    if (!isSvg) {
+      out.push(...lines.slice(i, closed ? j + 1 : lines.length));
+      i = closed ? j + 1 : lines.length;
+      continue;
+    }
+    const clean = closed ? sanitizeSvg(body) : null;
+    if (clean) {
+      out.push("", `<div class="ucw-svg" data-ucw-svg="${svgs.length}"></div>`, "");
+      svgs.push(clean);
+    } else {
+      // Still streaming, or the block never sanitized down to a usable
+      // document. Either way, show a placeholder instead of the source.
+      const label = closed ? "Could not render SVG" : "Rendering SVG\u2026";
+      out.push("", `<div class="ucw-svg ucw-svg-pending">${label}</div>`, "");
+    }
+    i = closed ? j + 1 : lines.length;
+  }
+  return { text: out.join("\n"), svgs };
+}
+
+/** Fill the placeholders left by `extractSvgFences` with the sanitized SVGs. */
+function injectSvgs(html: string, svgs: string[]): string {
+  if (!svgs.length) return html;
+  return html.replace(
+    /<div\b[^>]*\bdata-ucw-svg="(\d+)"[^>]*>\s*<\/div>/gi,
+    (full, idx: string) => {
+      const svg = svgs[Number(idx)];
+      return svg === undefined ? full : `<div class="ucw-svg">${svg}</div>`;
+    },
+  );
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
     switch (c) {
@@ -112,10 +215,17 @@ export function renderMarkdown(
   } else {
     prepared = devReplaceMarkers(prepared, opts.toolSummaries);
   }
-  const html = md.parse(prepared, { async: false }) as string;
-  return DOMPurify.sanitize(html, {
+  // SVG fences come out before the markdown pass — its DOMPurify config
+  // runs the HTML profile, which would drop the whole `<svg>` subtree.
+  // They go back in (already sanitized with the SVG profile) afterwards.
+  // Runs after the js-action strip so code actions that happen to embed
+  // an SVG fence stay stripped rather than rendering.
+  const { text: withoutSvg, svgs } = extractSvgFences(prepared);
+  const html = md.parse(withoutSvg, { async: false }) as string;
+  const safe = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
-    ALLOWED_ATTR: ["href", "title", "target", "rel", "class"],
+    ALLOWED_ATTR: ["href", "title", "target", "rel", "class", "data-ucw-svg"],
     ADD_ATTR: ["target"],
   });
+  return injectSvgs(safe, svgs);
 }

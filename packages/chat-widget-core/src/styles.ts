@@ -75,8 +75,13 @@ export const baseStyles = `
 .ucw-root[data-mode="floating"][data-position="bottom-right"] .ucw-panel { right: 0; }
 .ucw-root[data-mode="floating"][data-position="bottom-left"]  .ucw-panel { left: 0; }
 
-/* Inline mode fills its host container rather than the fixed --ucw-h box,
- * so an embedder sizing the container gets a panel that follows it. */
+/* Inline mode is embedded in the host's own layout, so the host container
+ * drives the size and --ucw-h/--ucw-w are not consulted. The contract: give
+ * the mount container a definite height (100dvh, a flex/grid track, an
+ * explicit px value) and the widget fills it. Against an auto-height
+ * container these percentages resolve to auto and the panel collapses to its
+ * content — so a container with no height is a host bug, not a widget one.
+ * The floating 90vh cap is dropped; the container bounds the panel now. */
 .ucw-root[data-mode="inline"] {
   height: 100%;
 }
@@ -202,6 +207,28 @@ export const baseStyles = `
 }
 .ucw-bubble code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .ucw-bubble a { color: var(--ucw-primary); }
+/* Inline SVG rendered from an svg code fence (mirrors the threads chat
+ * view's SVG preview). Centered, and its own scroll container so a wide
+ * drawing scrolls itself instead of widening the panel. */
+.ucw-svg {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  max-width: 100%;
+  margin: 6px 0;
+}
+.ucw-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+/* Fence still streaming, or an SVG that sanitized down to nothing. */
+.ucw-svg-pending {
+  display: block;
+  padding: 8px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ucw-muted);
+}
 .ucw-bubble img { max-width: 100%; height: auto; border-radius: 6px; }
 /* display:block turns the table into its own scroll container so a wide
  * one scrolls itself instead of widening the panel. */
