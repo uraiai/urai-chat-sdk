@@ -1,5 +1,17 @@
 # @uraiai/chat-widget-svelte
 
+## 0.1.11
+
+### Patch Changes
+
+- Updated dependencies [a41f280]
+- Updated dependencies [a41f280]
+- Updated dependencies [a41f280]
+- Updated dependencies [a41f280]
+- Updated dependencies [02cef1f]
+- Updated dependencies [a41f280]
+  - @uraiai/chat-widget-core@0.2.0
+
 ## 0.1.10
 
 Versions 0.1.0 – 0.1.10 predate changeset-managed releases in this repo: they were

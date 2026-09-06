@@ -1,11 +1,13 @@
 {
   "name": "@uraiai/chat-widget-svelte",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Svelte 5 component for the Urai chat widget",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     "./package.json": "./package.json",
     ".": {
@@ -37,7 +39,13 @@
   "publishConfig": {
     "access": "public"
   },
-  "keywords": ["urai", "chat", "widget", "chatbot", "svelte"],
+  "keywords": [
+    "urai",
+    "chat",
+    "widget",
+    "chatbot",
+    "svelte"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/uraiai/urai-chat-sdk",

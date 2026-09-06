@@ -1,5 +1,100 @@
 # @uraiai/chat-widget-react
 
+## 0.2.0
+
+### Minor Changes
+
+- a41f280: Add `@uraiai/chat-widget-react/ui` — a modular, inline chat you can restyle or rebuild
+  part by part. `<UraiChatWidget>` is untouched and keeps shipping from `.`; this is a new
+  component alongside it, and an existing consumer gains zero bytes.
+
+  ```tsx
+  import { UraiChat } from "@uraiai/chat-widget-react/ui";
+  import "@uraiai/chat-widget-react/styles.css";
+
+  <UraiChat widgetToken={token} userId={userId} className="h-dvh" />;
+  ```
+
+  Three levels of customization: swap any part with `components={{ SendButton, Header }}`
+  (every default is exported, so wrapping is a one-liner); restyle with `classNames`, plain
+  CSS on `[data-urai-part]`, or design tokens; or drop to `<Chat.Root>` and compose the
+  shell yourself. Hooks — `useComposer`, `useThreads`, `useAttachments`, `useChatStatus`,
+  `useStickToBottom` — are the same contract the defaults consume.
+
+  It is built from native React components in your own tree — no iframe, no shadow root —
+  so your stylesheet, Tailwind classes and design tokens reach it, and it is
+  **client-only by construction**: widget auth is `(token, Origin ∈ allowed_origins)` and a
+  server-side fetch carries no `Origin`, so the tree waits for mount behind a sized
+  fallback rather than 403-ing during SSR.
+
+  `vars` — the per-thread context an embedder attaches to a conversation — works through
+  every path: the initial prop lands in the thread-create body, prop changes patch the live
+  thread (compared by value, so a fresh object literal per render is not a request per
+  render), and updated vars carry into the next thread created. `userId` changes apply as a
+  live `setUser` rather than remounting the widget. A `ref` exposes `setVars`, `setUser`,
+  `startConversation`, `sendMessage`, `selectThread` and `configure` for host code outside
+  the tree, mirroring the legacy widget's controller.
+
+  Also new in core: `@uraiai/chat-widget-core/theme`, a design-token layer that fixes dark
+  mode. Today `applyTheme` writes `--ucw-background` as an inline style while the
+  stylesheet's `[data-theme="dark"]` block tries to override the same property on the same
+  element — inline wins across origins, so the dark block is dead code. Tokens now resolve
+  through `light-dark()` from seed variables, and JS never writes a semantic token. A
+  customized brand colour gets a derived dark palette instead of being ignored, and
+  foregrounds that fail WCAG AA against their own fill are flipped and reported.
+
+### Patch Changes
+
+- a41f280: Rewrite the README for the modular `/ui` chat: styling in five increasing levels
+  (defaults, theme tokens, `data-urai-part` CSS, `classNames`, `unstyled`), replacing and
+  wrapping parts, the compound `Chat.*` API, the hooks table, vars, and how SVG, markdown
+  and tool calls render. The floating `<UraiChatWidget>` keeps its own section and a
+  "which one?" note — there is no deprecation.
+- a41f280: Two fixes found by running the new `react-ui-demo` against a real service.
+
+  The inline chat now follows the embedding app's `color-scheme` by default. It was pinned
+  to light, because `DEFAULT_THEME.dark` is `false` and that is indistinguishable from "no
+  preference" — so a host toggling dark mode left the chat white. `colorScheme` is now an
+  explicit prop defaulting to `"host"`; `theme.dark` of `true` or `"system"` still wins.
+
+  Component rules are scoped as `.urai-root :where(.urai-x)` rather than bare `:where()`.
+  At zero specificity a host's global `button { background: … }` reset — which almost every
+  app has — repainted the widget's own controls and rendered its icons white on white. One
+  class of specificity clears element selectors while still tying with a host class or
+  Tailwind utility, and since the stylesheet is prepended to `<head>`, the host still wins
+  that tie on source order.
+
+- a41f280: Render SVG in the React view.
+
+  The agent draws charts as bare `<svg>` in the message body. The view runs
+  `rehype-raw` so the markup reached the tree, but then `rehype-sanitize` with
+  GitHub's `defaultSchema`, which has no SVG in it — so the whole subtree was
+  dropped and the visitor saw nothing, while the same message rendered in the
+  product's own chat view (which runs `rehype-raw` with no sanitizer, because it
+  trusts its own output inside its own authenticated app).
+
+  The schema now allows a shape-and-paint subset of SVG. Left out deliberately,
+  because the widget renders on a customer's page: `script`, SMIL animation
+  (`animate`, `animateTransform`, `set`), `foreignObject` (which exists to carry
+  HTML back in), the `style` _element_ (a stylesheet inside an SVG is
+  document-scoped and could restyle the host page), and the remote-reference
+  elements `image`, `feImage` and `use`. No `href` is allowed on any SVG element,
+  so there is no url to filter. Anything not on the list is dropped, so a missing
+  entry means a chart that draws incompletely, never one that draws dangerously.
+
+  ```svg fences are unwrapped to the same raw markup before parsing, so a fenced
+  drawing and one written into the prose take one path instead of two — a fenced
+  chart used to render as its own source code.
+  ```
+
+- Updated dependencies [a41f280]
+- Updated dependencies [a41f280]
+- Updated dependencies [a41f280]
+- Updated dependencies [a41f280]
+- Updated dependencies [02cef1f]
+- Updated dependencies [a41f280]
+  - @uraiai/chat-widget-core@0.2.0
+
 ## 0.1.10
 
 Versions 0.1.0 – 0.1.10 predate changeset-managed releases in this repo: they were

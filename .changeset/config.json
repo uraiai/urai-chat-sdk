@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["react-demo", "vue-demo", "svelte-demo"]
+  "ignore": ["react-demo", "vue-demo", "svelte-demo", "react-ui-demo"]
 }
