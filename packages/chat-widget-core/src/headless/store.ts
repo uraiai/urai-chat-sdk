@@ -203,7 +203,10 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
     if (!deps.transport) throw new Error("transport unavailable");
     if (state.threadId) return state.threadId;
 
-    const cached = session.load();
+    // A pending reset skips the cache outright. Clearing storage above
+    // already covers the normal path; this stops any future caller that
+    // nulls `threadId` without clearing storage from silently resuming.
+    const cached = state.forceNewOnNextCreate ? null : session.load();
     if (cached) {
       set({ threadId: cached });
       try {
@@ -587,6 +590,11 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
 
     newConversation(vars) {
       stopStream();
+      // Forget the persisted thread. Without this the id outlives the
+      // reset and the next send resumes the conversation the visitor
+      // just asked to leave — `ensureThread` consults storage before it
+      // considers creating anything.
+      session.clear();
       if (vars !== undefined) set({ vars });
       set({
         threadId: null,

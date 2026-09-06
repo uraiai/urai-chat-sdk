@@ -448,6 +448,55 @@ describe("store: identity and reset", () => {
     expect(s.threads.items).toBeNull();
   });
 
+  /**
+   * The reset has to reach storage, not just state. `ensureThread`
+   * consults the persisted id before it considers creating anything, so
+   * leaving it behind means the next message silently resumes the
+   * conversation the visitor just asked to leave.
+   */
+  it("creates a fresh thread after newConversation, not the old one", async () => {
+    const session = memorySession();
+    const transport = makeFakeTransport({
+      messages: {
+        t1: [
+          {
+            id: "m1",
+            thread_id: "t1",
+            message_idx: 0,
+            role: "user",
+            content: "the old conversation",
+            reasoning: null,
+            created_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      },
+    });
+    const { store } = makeStore({ transport, session });
+
+    await store.actions.send("first");
+    expect(store.getState().threadId).toBe("t1");
+
+    store.actions.newConversation();
+    expect(session.value).toBeNull();
+
+    await store.actions.send("second");
+    expect(store.getState().threadId).toBe("t2");
+    expect(
+      store.getState().messages.some((m) => m.content === "the old conversation"),
+    ).toBe(false);
+    expect(
+      transport.callNames().filter((n) => n === "createOrResumeThread"),
+    ).toHaveLength(2);
+  });
+
+  it("still resumes a cached thread when no reset is pending", async () => {
+    const session = memorySession("t-cached");
+    const { store, transport } = makeStore({ session });
+    await store.actions.send("hello");
+    expect(store.getState().threadId).toBe("t-cached");
+    expect(transport.callNames()).not.toContain("createOrResumeThread");
+  });
+
   it("auto-restore is skipped while a reset is pending", async () => {
     const session = memorySession("t-old");
     const { store, transport } = makeStore({ session });
