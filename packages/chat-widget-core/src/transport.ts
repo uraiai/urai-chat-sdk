@@ -134,6 +134,14 @@ export class Transport {
       force_new?: boolean;
       title?: string;
       vars?: Record<string, unknown> | null;
+      /**
+       * Knowledge collection **ids** this conversation may search, on top of
+       * whatever the assistant already carries. Ids, never slugs: the widget
+       * token is public page source, so an unguessable id is what stands
+       * between a visitor and the organization's documents. The server
+       * rejects the whole request if any id isn't one of the organization's.
+       */
+      collections?: string[] | null;
     } = {},
   ): Promise<CreateThreadResult> {
     const res = await fetch(this.url("/threads"), {
@@ -160,6 +168,29 @@ export class Transport {
       body: JSON.stringify({ vars }),
     });
     if (!res.ok) throw new Error(`patch thread vars failed: ${res.status}`);
+  }
+
+  /**
+   * Replace the thread's knowledge scope. `null` or `[]` clears it back to
+   * "whatever the assistant carries and nothing more".
+   *
+   * Sends only `collections` — a body carrying `vars: null` alongside would
+   * clear vars the caller never touched, since the server reads an explicit
+   * null as "clear this". That asymmetry is why this is a separate method
+   * rather than one `patchThread`.
+   */
+  async updateThreadCollections(
+    threadId: string,
+    collections: string[] | null,
+  ): Promise<void> {
+    const res = await fetch(this.url(`/threads/${threadId}`), {
+      method: "PATCH",
+      headers: this.headers(),
+      body: JSON.stringify({ collections: collections ?? [] }),
+    });
+    if (!res.ok) {
+      throw new Error(`patch thread collections failed: ${res.status}`);
+    }
   }
 
   async listMessages(threadId: string): Promise<ServerMessage[]> {

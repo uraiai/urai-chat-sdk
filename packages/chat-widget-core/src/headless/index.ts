@@ -41,10 +41,12 @@ export {
 export type { ChatTransport } from "./transport-port";
 
 export {
+  asNewConversationOptions,
   createChatStore,
   type ChatActions,
   type ChatStore,
   type ChatStoreDeps,
+  type NewConversationArg,
 } from "./store";
 
 export {

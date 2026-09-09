@@ -16,6 +16,13 @@
     /** Chat-service origin. Defaults to the hosted Urai deployment. */
     baseUrl?: string;
     vars?: WidgetVars | null;
+    /**
+     * Knowledge collection **ids** scoping the conversation, on top of
+     * whatever the assistant already carries. Ids, never slugs — the widget
+     * token is public, so the unguessable id is what keeps the
+     * organization's other collections out of reach.
+     */
+    collections?: string[] | null;
     theme?: Partial<WidgetTheme>;
     layout?: Partial<WidgetLayout>;
     behavior?: Partial<WidgetBehavior>;
@@ -43,6 +50,7 @@
     userId,
     baseUrl = undefined,
     vars = null,
+    collections = null,
     theme = undefined,
     layout = undefined,
     behavior = undefined,
@@ -61,6 +69,7 @@
   let lastOverrides = "";
   let lastUserId = "";
   let lastVars = "";
+  let lastCollections = "";
 
   /** Access the live controller via `bind:this` on the component. */
   export function getController(): WidgetController | null {
@@ -83,6 +92,7 @@
         baseUrl: base,
         userId,
         vars,
+        collections,
         theme,
         layout,
         behavior,
@@ -94,6 +104,7 @@
       lastOverrides = JSON.stringify({ theme, layout, behavior });
       lastUserId = userId;
       lastVars = JSON.stringify(vars ?? null);
+      lastCollections = JSON.stringify(collections ?? null);
     });
 
     const subscriptions = [
@@ -142,6 +153,15 @@
     if (!controller || json === lastVars) return;
     lastVars = json;
     controller.setVars(JSON.parse(json) as WidgetVars | null);
+  });
+
+  // Serialized for the same reason as vars: a fresh array on every render
+  // would otherwise PATCH the server each time the parent re-renders.
+  $effect(() => {
+    const json = JSON.stringify(collections ?? null);
+    if (!controller || json === lastCollections) return;
+    lastCollections = json;
+    controller.setCollections(JSON.parse(json) as string[] | null);
   });
 </script>
 

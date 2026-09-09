@@ -24,6 +24,13 @@ export interface ChatClientOptions {
   userId: string;
   baseUrl?: string;
   vars?: WidgetVars | null;
+  /**
+   * Knowledge collection **ids** scoping the conversation, on top of whatever
+   * the assistant already carries. Ids, never slugs — the widget token is
+   * public, so the unguessable id is what keeps the organization's other
+   * collections out of reach.
+   */
+  collections?: string[] | null;
   theme?: ConfigOverrides["theme"];
   layout?: ConfigOverrides["layout"];
   behavior?: ConfigOverrides["behavior"];
@@ -91,6 +98,7 @@ export function createChatClient(options: ChatClientOptions): ChatClient {
     config: resolve(),
     userId: options.userId,
     vars: options.vars ?? null,
+    collections: options.collections ?? null,
     emit,
     batch: options.batch,
     session: createSessionStore({

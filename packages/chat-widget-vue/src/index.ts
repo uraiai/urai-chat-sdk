@@ -38,6 +38,16 @@ export const UraiChatWidget = defineComponent({
       type: Object as PropType<WidgetVars | null>,
       default: null,
     },
+    /**
+     * Knowledge collection **ids** scoping the conversation, on top of
+     * whatever the assistant already carries. Ids, never slugs — the widget
+     * token is public, so the unguessable id is what keeps the
+     * organization's other collections out of reach.
+     */
+    collections: {
+      type: Array as PropType<string[] | null>,
+      default: null,
+    },
     theme: {
       type: Object as PropType<Partial<WidgetTheme>>,
       default: undefined,
@@ -81,6 +91,7 @@ export const UraiChatWidget = defineComponent({
     let subscriptions: Array<() => void> = [];
     let lastOverrides = "";
     let lastVars = "";
+    let lastCollections = "";
 
     const overridesOf = (): ConfigOverrides => ({
       theme: props.theme,
@@ -106,6 +117,7 @@ export const UraiChatWidget = defineComponent({
         userId: props.userId,
         baseUrl: props.baseUrl,
         vars: props.vars,
+        collections: props.collections,
         theme: props.theme,
         layout: props.layout,
         behavior: props.behavior,
@@ -114,6 +126,7 @@ export const UraiChatWidget = defineComponent({
       controller.value = c;
       lastOverrides = JSON.stringify(overridesOf());
       lastVars = JSON.stringify(props.vars ?? null);
+      lastCollections = JSON.stringify(props.collections ?? null);
       subscriptions = [
         c.on("ready", () => emit("ready")),
         c.on("opened", () => emit("opened")),
@@ -166,6 +179,17 @@ export const UraiChatWidget = defineComponent({
         if (!controller.value || json === lastVars) return;
         lastVars = json;
         controller.value.setVars(JSON.parse(json) as WidgetVars | null);
+      },
+    );
+
+    // Serialized for the same reason as vars: a fresh array on every render
+    // would otherwise PATCH the server each time the parent re-renders.
+    watch(
+      () => JSON.stringify(props.collections ?? null),
+      (json) => {
+        if (!controller.value || json === lastCollections) return;
+        lastCollections = json;
+        controller.value.setCollections(JSON.parse(json) as string[] | null);
       },
     );
 

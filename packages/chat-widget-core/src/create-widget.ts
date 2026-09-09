@@ -17,7 +17,12 @@ import {
   type WidgetEventListener,
   type WidgetEventName,
 } from "./events";
-import { mountWidget, type MountedWidget, type WidgetVars } from "./ui";
+import {
+  mountWidget,
+  type MountedWidget,
+  type StartConversationArg,
+  type WidgetVars,
+} from "./ui";
 
 /** Used when no `baseUrl` option is given (the hosted Urai deployment). */
 export const DEFAULT_BASE_URL = "https://chat.app.urai.dev";
@@ -38,6 +43,13 @@ export interface UraiChatWidgetOptions {
   baseUrl?: string;
   /** Context vars for the first thread this visitor creates. */
   vars?: WidgetVars | null;
+  /**
+   * Knowledge collection **ids** to scope the conversation to, on top of
+   * whatever the assistant already carries. Ids, never slugs — the widget
+   * token is public, so the unguessable id is what keeps the organization's
+   * other collections out of reach.
+   */
+  collections?: string[] | null;
   theme?: Partial<WidgetTheme>;
   layout?: Partial<WidgetLayout>;
   behavior?: Partial<WidgetBehavior>;
@@ -59,7 +71,13 @@ export interface WidgetController {
   reset(): void;
   setUser(args: { id: string; vars?: WidgetVars | null }): void;
   setVars(vars: WidgetVars | null): void;
-  startConversation(vars?: WidgetVars | null): void;
+  /**
+   * Scope this conversation's knowledge search to these collection ids, on
+   * top of the assistant's own — a floor this can add to but never narrow.
+   * `null` or `[]` clears the extra scope.
+   */
+  setCollections(collections: string[] | null): void;
+  startConversation(opts?: StartConversationArg): void;
   /** Re-resolve config: server config → constructor options → these overrides. */
   configure(overrides: ConfigOverrides): void;
   on(event: WidgetEventName, listener: WidgetEventListener): () => void;
@@ -163,6 +181,7 @@ export function createUraiChatWidget(
       widgetToken: options.widgetToken,
       initialUserId: userId,
       initialVars: options.vars ?? null,
+      initialCollections: options.collections ?? null,
       hostElement: host,
       emit: (event: WidgetEvent) => emitter.emit(event),
     });
@@ -192,7 +211,8 @@ export function createUraiChatWidget(
     reset: () => call((m) => m.reset()),
     setUser: ({ id, vars }) => call((m) => m.setUser(id, vars)),
     setVars: (vars) => call((m) => m.setVars(vars)),
-    startConversation: (vars) => call((m) => m.startConversation(vars)),
+    setCollections: (collections) => call((m) => m.setCollections(collections)),
+    startConversation: (opts) => call((m) => m.startConversation(opts)),
     configure: (overrides) =>
       call((m) =>
         m.applyConfig(

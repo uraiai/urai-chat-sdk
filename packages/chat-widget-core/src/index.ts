@@ -11,7 +11,7 @@ export type {
   WidgetEventListener,
 } from "./events";
 
-export type { WidgetVars } from "./ui";
+export type { StartConversationArg, WidgetVars } from "./ui";
 
 export {
   DEFAULT_BEHAVIOR,

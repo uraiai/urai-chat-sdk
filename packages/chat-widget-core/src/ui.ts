@@ -36,6 +36,12 @@ interface MountArgs {
    * thread exists.
    */
   initialVars?: WidgetVars | null;
+  /**
+   * Initial knowledge scope (collection ids). Used for the first thread the
+   * visitor creates and as the default if `setCollections` is called before
+   * any thread exists.
+   */
+  initialCollections?: string[] | null;
   hostElement: HTMLElement;
   /**
    * When true, all transport calls are bypassed: submit() renders a fake
@@ -49,6 +55,38 @@ interface MountArgs {
 
 export type WidgetVars = Record<string, unknown>;
 
+/**
+ * Argument to `startConversation`. Historically a bare vars object; the
+ * object form was added for `collections` and is detected by the presence of
+ * a `vars` or `collections` key — see [`asStartOptions`].
+ */
+export type StartConversationArg =
+  | WidgetVars
+  | null
+  | { vars?: WidgetVars | null; collections?: string[] | null };
+
+/**
+ * Normalise `startConversation`'s argument into `{vars, collections}`.
+ *
+ * The original signature took a bare vars object, and hosts still call it
+ * that way, so the options form is detected by the presence of a `vars` or
+ * `collections` key. A host whose vars literally contain a top-level `vars`
+ * key would be misread — hence the discriminator being documented rather than
+ * inferred silently. A bare `{}` is ambiguous under this test but means the
+ * same thing either way: start fresh, change no context.
+ */
+export function asStartOptions(arg?: StartConversationArg): {
+  vars?: WidgetVars | null;
+  collections?: string[] | null;
+} {
+  if (arg === undefined) return {};
+  if (arg === null) return { vars: null };
+  if ("vars" in arg || "collections" in arg) {
+    return arg as { vars?: WidgetVars | null; collections?: string[] | null };
+  }
+  return { vars: arg as WidgetVars };
+}
+
 export interface MountedWidget {
   open(): void;
   close(): void;
@@ -57,7 +95,8 @@ export interface MountedWidget {
   reset(): void;
   setUser(id: string, vars?: WidgetVars | null): void;
   setVars(vars: WidgetVars | null): void;
-  startConversation(vars?: WidgetVars | null): void;
+  setCollections(collections: string[] | null): void;
+  startConversation(opts?: StartConversationArg): void;
   applyConfig(config: ResolvedConfig): void;
   /**
    * Tear the widget down: close any in-flight SSE stream, cancel preview
@@ -97,6 +136,13 @@ interface UiState {
    * thread. `null` means no vars (server stores SQL NULL).
    */
   currentVars: WidgetVars | null;
+  /**
+   * Knowledge collection ids to apply when the next thread is created, and
+   * kept in sync with the server when `setCollections` is called against an
+   * existing thread. `null` means "no extra scope" — the assistant's own
+   * collections are unaffected either way; this list can only add to them.
+   */
+  currentCollections: string[] | null;
   /**
    * Set by user-initiated reset paths (the "New conversation"
    * dropdown CTA, `startConversation` from the host SDK). The next
@@ -151,6 +197,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     isSending: false,
     userId: args.initialUserId,
     currentVars: args.initialVars ?? null,
+    currentCollections: args.initialCollections ?? null,
     forceNewOnNextCreate: false,
   };
 
@@ -916,10 +963,15 @@ export function mountWidget(args: MountArgs): MountedWidget {
     // dropping people into a conversation they don't remember.
     // Visitors who want to resume a past thread pick it from the
     // dropdown (that path uses `switchToThread`, not this one).
-    const createBody: { force_new?: boolean; vars?: WidgetVars } = {
+    const createBody: {
+      force_new?: boolean;
+      vars?: WidgetVars;
+      collections?: string[];
+    } = {
       force_new: true,
     };
     if (state.currentVars) createBody.vars = state.currentVars;
+    if (state.currentCollections) createBody.collections = state.currentCollections;
     const result = await transport.createOrResumeThread(createBody);
     state.forceNewOnNextCreate = false;
     state.threadId = result.thread_id;
@@ -1261,12 +1313,29 @@ export function mountWidget(args: MountArgs): MountedWidget {
     }
   }
 
-  function startConversation(vars?: WidgetVars | null) {
+  /**
+   * Scope this conversation's knowledge search to `collections` (ids), on top
+   * of whatever the assistant already carries. Same buffering rule as
+   * `setVars`: with a live thread it patches the server, with none yet it is
+   * held for the next lazy create.
+   */
+  function setCollections(collections: string[] | null) {
+    state.currentCollections = collections;
+    if (transport && state.threadId && !previewMode) {
+      void transport
+        .updateThreadCollections(state.threadId, collections)
+        .catch((e) => console.warn("[UraiChat] setCollections patch:", e));
+    }
+  }
+
+  function startConversation(arg?: StartConversationArg) {
     // Buffer the vars so the next thread creation picks them up. We
     // don't hit the server now — the thread is created lazily on the
     // first message, which keeps "every navigation calls
     // startConversation" cheap.
-    if (vars !== undefined) state.currentVars = vars;
+    const opts = asStartOptions(arg);
+    if (opts.vars !== undefined) state.currentVars = opts.vars;
+    if (opts.collections !== undefined) state.currentCollections = opts.collections;
     reset();
   }
 
@@ -1365,6 +1434,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     reset,
     setUser,
     setVars,
+    setCollections,
     startConversation,
     applyConfig,
     destroy,

@@ -36,6 +36,7 @@ export interface ChatStoreDeps {
   config: ResolvedConfig;
   userId: string;
   vars?: WidgetVars | null;
+  collections?: string[] | null;
   session?: SessionStore;
   emit?: (event: WidgetEvent) => void;
   /**
@@ -62,7 +63,7 @@ export interface ChatActions {
   loadThreads(): Promise<void>;
   setThreadQuery(query: string): void;
   selectThread(threadId: string): Promise<void>;
-  newConversation(vars?: WidgetVars | null): void;
+  newConversation(opts?: NewConversationArg): void;
 
   /**
    * Fetch a remote attachment's bytes. Views go through this rather
@@ -73,7 +74,37 @@ export interface ChatActions {
   fetchAttachmentBlob(attachment: ChatAttachment): Promise<Blob | null>;
   setUser(id: string, vars?: WidgetVars | null): void;
   setVars(vars: WidgetVars | null): void;
+  /**
+   * Scope this conversation's knowledge search to these collection ids, on
+   * top of the assistant's own. Same buffering rule as `setVars`: with a live
+   * thread it patches the server, with none yet it is held for the next lazy
+   * create.
+   */
+  setCollections(collections: string[] | null): void;
   applyConfig(config: ResolvedConfig): void;
+}
+
+/**
+ * Argument to `newConversation`. Historically a bare vars object, and hosts
+ * still call it that way, so the options form is detected by the presence of
+ * a `vars` or `collections` key — see [`asNewConversationOptions`].
+ */
+export type NewConversationArg =
+  | WidgetVars
+  | null
+  | { vars?: WidgetVars | null; collections?: string[] | null };
+
+/** Normalise [`NewConversationArg`] into its object form. */
+export function asNewConversationOptions(arg?: NewConversationArg): {
+  vars?: WidgetVars | null;
+  collections?: string[] | null;
+} {
+  if (arg === undefined) return {};
+  if (arg === null) return { vars: null };
+  if ("vars" in arg || "collections" in arg) {
+    return arg as { vars?: WidgetVars | null; collections?: string[] | null };
+  }
+  return { vars: arg as WidgetVars };
 }
 
 export interface ChatStore {
@@ -89,6 +120,7 @@ function initialState(deps: ChatStoreDeps): ChatState {
     config: deps.config,
     userId: deps.userId,
     vars: deps.vars ?? null,
+    collections: deps.collections ?? null,
     threadId: null,
     forceNewOnNextCreate: false,
     messages: [],
@@ -222,8 +254,13 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       if (state.threadId) return state.threadId;
     }
 
-    const body: { force_new: boolean; vars?: WidgetVars } = { force_new: true };
+    const body: {
+      force_new: boolean;
+      vars?: WidgetVars;
+      collections?: string[];
+    } = { force_new: true };
     if (state.vars) body.vars = state.vars;
+    if (state.collections) body.collections = state.collections;
     const result = await deps.transport.createOrResumeThread(body);
     set({ threadId: result.thread_id, forceNewOnNextCreate: false });
     session.save(result.thread_id);
@@ -588,14 +625,16 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       }
     },
 
-    newConversation(vars) {
+    newConversation(arg) {
+      const opts = asNewConversationOptions(arg);
       stopStream();
       // Forget the persisted thread. Without this the id outlives the
       // reset and the next send resumes the conversation the visitor
       // just asked to leave — `ensureThread` consults storage before it
       // considers creating anything.
       session.clear();
-      if (vars !== undefined) set({ vars });
+      if (opts.vars !== undefined) set({ vars: opts.vars });
+      if (opts.collections !== undefined) set({ collections: opts.collections });
       set({
         threadId: null,
         // Tell the next create to actually create. Also stops
@@ -648,6 +687,15 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         void deps.transport
           .updateThreadVars(state.threadId, vars)
           .catch((e) => console.warn("[UraiChat] setVars patch:", e));
+      }
+    },
+
+    setCollections(collections) {
+      set({ collections });
+      if (deps.transport && state.threadId) {
+        void deps.transport
+          .updateThreadCollections(state.threadId, collections)
+          .catch((e) => console.warn("[UraiChat] setCollections patch:", e));
       }
     },
 

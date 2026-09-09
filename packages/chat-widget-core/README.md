@@ -38,6 +38,7 @@ widget.destroy();
 | `userId` | yes | Stable, opaque visitor id. Threads are isolated per `(widget, userId)`. |
 | `baseUrl` | no | Origin of your chat-service deployment. Defaults to `https://chat.app.urai.dev` (the hosted Urai deployment). |
 | `vars` | no | Context object stored on the next created thread. |
+| `collections` | no | Knowledge collection **ids** to scope the conversation to, on top of the assistant's own. See [Scoping knowledge](#scoping-knowledge-collections). |
 | `theme` / `layout` / `behavior` | no | Override the server-configured appearance. Merge order: defaults → server config → these options → `configure()` calls. |
 | `container` | no | An element to render into. Providing it switches the widget to inline mode; omitting it mounts a floating launcher on `document.body`. |
 | `fetchServerConfig` | no | Set `false` to skip the `GET /config` call and use local options only. |
@@ -46,7 +47,8 @@ widget.destroy();
 
 `open() / close() / toggle()`, `sendMessage(content)`, `reset()`,
 `setUser({ id, vars? })` (identity change resets the conversation),
-`setVars(vars)`, `startConversation(vars?)`, `configure(overrides)`,
+`setVars(vars)`, `setCollections(ids)`, `startConversation({ vars?, collections? })`,
+`configure(overrides)`,
 `on(event, listener)` (returns an unsubscribe function), `ready`
 (promise, resolves after config fetch + mount), `destroy()` (idempotent).
 
@@ -81,6 +83,44 @@ widget.startConversation({ topic: "billing" });
 // 4. Alongside an identity change
 widget.setUser({ id: "user_43", vars: { plan: "enterprise" } });
 ```
+
+
+## Scoping knowledge (collections)
+
+An assistant can have knowledge collections attached to it at definition time.
+`collections` lets the **host** add more for one conversation — the product
+area a visitor is currently in, say — without touching the assistant.
+
+The two are **unioned**: the assistant's own collections are a floor this can
+add to and never narrow, so scoping a thread can widen what the assistant
+reaches but never take away what its author gave it.
+
+```ts
+// 1. At creation — applies to the first thread this visitor creates
+const widget = createUraiChatWidget({
+  widgetToken: "<widget token>",
+  userId: "user_42",
+  collections: ["9f1c…", "4b7e…"],
+});
+
+// 2. Live — patches the active thread, or is buffered for the next one
+widget.setCollections(["9f1c…"]);
+widget.setCollections(null); // clear the extra scope
+
+// 3. Seeding a fresh conversation
+widget.startConversation({ vars: { topic: "billing" }, collections: ["9f1c…"] });
+```
+
+**Pass collection ids, not slugs.** A widget token lives in your page source,
+so the unguessable id is what keeps the rest of your organization's
+collections out of reach. The server checks every id against the organization
+that owns the widget and rejects the whole call if one doesn't belong — you'll
+see that as an `error` event (the panel stays usable), which is deliberate: a
+scope that silently isn't what you asked for produces confident answers drawn
+from the wrong documents.
+
+Scope is per conversation, not per message — every turn of a thread inherits
+it, and it survives a page reload with the thread.
 
 ## Receiving commands from tools
 

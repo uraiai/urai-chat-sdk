@@ -32,6 +32,13 @@ export interface UraiChatWidgetProps {
   /** Chat-service origin. Defaults to the hosted Urai deployment. */
   baseUrl?: string;
   vars?: WidgetVars | null;
+  /**
+   * Knowledge collection **ids** scoping the conversation, on top of whatever
+   * the assistant already carries. Ids, never slugs — the widget token is
+   * public, so the unguessable id is what keeps the organization's other
+   * collections out of reach.
+   */
+  collections?: string[] | null;
   theme?: Partial<WidgetTheme>;
   layout?: Partial<WidgetLayout>;
   behavior?: Partial<WidgetBehavior>;
@@ -63,7 +70,7 @@ function overridesOf(props: UraiChatWidgetProps): ConfigOverrides {
 
 export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
   function UraiChatWidget(props, ref) {
-    const { widgetToken, baseUrl, userId, vars, mode = "floating" } = props;
+    const { widgetToken, baseUrl, userId, vars, collections, mode = "floating" } = props;
 
     const containerRef = useRef<HTMLDivElement | null>(null);
     const controllerRef = useRef<WidgetController | null>(null);
@@ -75,6 +82,7 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
     const lastOverridesRef = useRef("");
     const lastUserIdRef = useRef("");
     const lastVarsRef = useRef("");
+    const lastCollectionsRef = useRef("");
 
     useEffect(() => {
       const p = propsRef.current;
@@ -87,6 +95,7 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
         baseUrl,
         userId: p.userId,
         vars: p.vars,
+        collections: p.collections,
         theme: p.theme,
         layout: p.layout,
         behavior: p.behavior,
@@ -96,6 +105,7 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
       lastOverridesRef.current = JSON.stringify(overridesOf(p));
       lastUserIdRef.current = p.userId;
       lastVarsRef.current = JSON.stringify(p.vars ?? null);
+      lastCollectionsRef.current = JSON.stringify(p.collections ?? null);
 
       const c = () => propsRef.current;
       const subscriptions = [
@@ -149,6 +159,16 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
       controller.setVars(JSON.parse(varsJson) as WidgetVars | null);
     }, [varsJson]);
 
+    // Serialized for the same reason as vars: a fresh array literal on every
+    // parent render would otherwise PATCH the server on every render.
+    const collectionsJson = JSON.stringify(collections ?? null);
+    useEffect(() => {
+      const controller = controllerRef.current;
+      if (!controller || collectionsJson === lastCollectionsRef.current) return;
+      lastCollectionsRef.current = collectionsJson;
+      controller.setCollections(JSON.parse(collectionsJson) as string[] | null);
+    }, [collectionsJson]);
+
     // Stable facade so the ref works regardless of when (or how often)
     // the underlying controller is recreated.
     useImperativeHandle(
@@ -162,7 +182,8 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
         reset: () => controllerRef.current?.reset(),
         setUser: (args) => controllerRef.current?.setUser(args),
         setVars: (v) => controllerRef.current?.setVars(v),
-        startConversation: (v) => controllerRef.current?.startConversation(v),
+        setCollections: (c) => controllerRef.current?.setCollections(c),
+        startConversation: (o) => controllerRef.current?.startConversation(o),
         configure: (overrides) => controllerRef.current?.configure(overrides),
         on: (event: WidgetEventName, listener: WidgetEventListener) =>
           controllerRef.current?.on(event, listener) ?? (() => {}),

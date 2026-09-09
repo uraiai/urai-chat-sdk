@@ -97,6 +97,16 @@ describe("store: ensureThread", () => {
     });
   });
 
+  it("includes collections when they are set", async () => {
+    const { store, transport } = makeStore();
+    store.actions.setCollections(["c-billing"]);
+    await store.actions.send("hello");
+    expect(transport.calls[0].args[0]).toEqual({
+      force_new: true,
+      collections: ["c-billing"],
+    });
+  });
+
   it("resumes a cached thread and hydrates its history", async () => {
     const session = memorySession("t-cached");
     const transport = makeFakeTransport({
@@ -558,6 +568,67 @@ describe("store: identity and reset", () => {
     await store.actions.send("hello");
     store.actions.setVars({ a: 2 });
     expect(transport.callNames()).toContain("updateThreadVars");
+  });
+
+  /** Same buffering rule as setVars: held until there is a thread to patch. */
+  it("setCollections patches only when a thread exists", async () => {
+    const { store, transport } = makeStore();
+    store.actions.setCollections(["c-1"]);
+    expect(transport.callNames()).not.toContain("updateThreadCollections");
+    await store.actions.send("hello");
+    store.actions.setCollections(["c-2"]);
+    expect(transport.callNames()).toContain("updateThreadCollections");
+  });
+
+  it("setCollections(null) clears the scope", async () => {
+    const { store, transport } = makeStore();
+    await store.actions.send("hello");
+    store.actions.setCollections(null);
+    expect(store.getState().collections).toBeNull();
+    const call = transport.calls.find(
+      (c) => c.method === "updateThreadCollections",
+    );
+    expect(call?.args[1]).toBeNull();
+  });
+});
+
+describe("store: newConversation argument forms", () => {
+  /**
+   * The signature took a bare vars object before `collections` existed, and
+   * hosts still call it that way. Breaking that would break every existing
+   * embed on upgrade.
+   */
+  it("still accepts a bare vars object", () => {
+    const { store } = makeStore();
+    store.actions.newConversation({ plan: "pro" });
+    expect(store.getState().vars).toEqual({ plan: "pro" });
+    expect(store.getState().collections).toBeNull();
+  });
+
+  it("accepts the options form", () => {
+    const { store } = makeStore();
+    store.actions.newConversation({
+      vars: { plan: "pro" },
+      collections: ["c-1"],
+    });
+    expect(store.getState().vars).toEqual({ plan: "pro" });
+    expect(store.getState().collections).toEqual(["c-1"]);
+  });
+
+  /** Only the key that was passed moves; the other keeps its value. */
+  it("leaves the key that was not passed alone", () => {
+    const { store } = makeStore();
+    store.actions.setVars({ plan: "pro" });
+    store.actions.newConversation({ collections: ["c-1"] });
+    expect(store.getState().vars).toEqual({ plan: "pro" });
+    expect(store.getState().collections).toEqual(["c-1"]);
+  });
+
+  it("null still means clear the vars", () => {
+    const { store } = makeStore();
+    store.actions.setVars({ plan: "pro" });
+    store.actions.newConversation(null);
+    expect(store.getState().vars).toBeNull();
   });
 });
 

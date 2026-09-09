@@ -15,6 +15,7 @@ import {
   createChatClient,
   type ChatClient,
   type ChatClientOptions,
+  type NewConversationArg,
   type WidgetVars,
 } from "@uraiai/chat-widget-core/headless";
 import { themeToStyle } from "@uraiai/chat-widget-core/theme";
@@ -49,11 +50,20 @@ import { ensureStyles } from "./styles";
  */
 export interface UraiChatHandle {
   sendMessage(content: string): void;
-  /** Buffer vars for the next thread and start fresh. */
-  startConversation(vars?: WidgetVars | null): void;
-  newConversation(vars?: WidgetVars | null): void;
+  /**
+   * Buffer context for the next thread and start fresh. Pass
+   * `{vars, collections}`; a bare vars object still works for callers written
+   * before `collections` existed.
+   */
+  startConversation(opts?: NewConversationArg): void;
+  newConversation(opts?: NewConversationArg): void;
   setUser(args: { id: string; vars?: WidgetVars | null }): void;
   setVars(vars: WidgetVars | null): void;
+  /**
+   * Scope this conversation's knowledge search to these collection ids, on
+   * top of the assistant's own — a floor this can add to but never narrow.
+   */
+  setCollections(collections: string[] | null): void;
   selectThread(threadId: string): void;
   configure(overrides: ConfigOverrides): void;
   on(event: WidgetEventName, listener: WidgetEventListener): () => void;
@@ -66,6 +76,13 @@ export interface ChatRootProps {
   userId: string;
   baseUrl?: string;
   vars?: WidgetVars | null;
+  /**
+   * Knowledge collection **ids** scoping the conversation, on top of whatever
+   * the assistant already carries. Ids, never slugs — the widget token is
+   * public, so the unguessable id is what keeps the organization's other
+   * collections out of reach.
+   */
+  collections?: string[] | null;
 
   theme?: ConfigOverrides["theme"];
   layout?: ConfigOverrides["layout"];
@@ -143,6 +160,7 @@ function ChatRoot(props, ref) {
       userId: props.userId,
       baseUrl: props.baseUrl,
       vars: props.vars,
+      collections: props.collections,
       theme: props.theme,
       layout: props.layout,
       behavior: props.behavior,
@@ -193,6 +211,18 @@ function ChatRoot(props, ref) {
     client.store.actions.setVars(JSON.parse(varsJson) as WidgetVars | null);
   }, [client, varsJson]);
 
+  // Serialized for the same reason as vars: a fresh array literal on every
+  // parent render would otherwise PATCH the server on every render.
+  const collectionsJson = JSON.stringify(props.collections ?? null);
+  const lastCollections = useRef(collectionsJson);
+  useEffect(() => {
+    if (!client || collectionsJson === lastCollections.current) return;
+    lastCollections.current = collectionsJson;
+    client.store.actions.setCollections(
+      JSON.parse(collectionsJson) as string[] | null,
+    );
+  }, [client, collectionsJson]);
+
   // A stable facade, so a stored ref survives the client being recreated.
   const clientRef = useRef<ChatClient | null>(null);
   clientRef.current = client;
@@ -200,12 +230,14 @@ function ChatRoot(props, ref) {
     ref,
     (): UraiChatHandle => ({
       sendMessage: (content) => void clientRef.current?.store.actions.send(content),
-      startConversation: (vars) =>
-        clientRef.current?.store.actions.newConversation(vars),
-      newConversation: (vars) =>
-        clientRef.current?.store.actions.newConversation(vars),
+      startConversation: (opts) =>
+        clientRef.current?.store.actions.newConversation(opts),
+      newConversation: (opts) =>
+        clientRef.current?.store.actions.newConversation(opts),
       setUser: ({ id, vars }) => clientRef.current?.store.actions.setUser(id, vars),
       setVars: (vars) => clientRef.current?.store.actions.setVars(vars),
+      setCollections: (collections) =>
+        clientRef.current?.store.actions.setCollections(collections),
       selectThread: (id) => void clientRef.current?.store.actions.selectThread(id),
       configure: (overrides) => clientRef.current?.configure(overrides),
       on: (event, listener) => clientRef.current?.on(event, listener) ?? (() => {}),

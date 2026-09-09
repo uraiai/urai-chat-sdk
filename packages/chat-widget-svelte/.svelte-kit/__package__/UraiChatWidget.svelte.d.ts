@@ -5,6 +5,13 @@ interface Props {
     /** Chat-service origin. Defaults to the hosted Urai deployment. */
     baseUrl?: string;
     vars?: WidgetVars | null;
+    /**
+     * Knowledge collection **ids** scoping the conversation, on top of
+     * whatever the assistant already carries. Ids, never slugs — the widget
+     * token is public, so the unguessable id is what keeps the
+     * organization's other collections out of reach.
+     */
+    collections?: string[] | null;
     theme?: Partial<WidgetTheme>;
     layout?: Partial<WidgetLayout>;
     behavior?: Partial<WidgetBehavior>;

@@ -28,10 +28,15 @@ export interface ChatTransport {
     force_new?: boolean;
     title?: string;
     vars?: Record<string, unknown> | null;
+    collections?: string[] | null;
   }): Promise<CreateThreadResult>;
   updateThreadVars(
     threadId: string,
     vars: Record<string, unknown> | null,
+  ): Promise<void>;
+  updateThreadCollections(
+    threadId: string,
+    collections: string[] | null,
   ): Promise<void>;
 
   listMessages(threadId: string): Promise<ServerMessage[]>;

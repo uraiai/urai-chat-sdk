@@ -99,6 +99,13 @@ export interface ChatState {
   config: ResolvedConfig;
   userId: string;
   vars: WidgetVars | null;
+  /**
+   * Knowledge collection ids scoping this conversation, on top of whatever
+   * the assistant already carries — this list can only add to the
+   * assistant's own collections, never narrow them. `null` means no extra
+   * scope, which is the common case.
+   */
+  collections: string[] | null;
 
   threadId: string | null;
   /**

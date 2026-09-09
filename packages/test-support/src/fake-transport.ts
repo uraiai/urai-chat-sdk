@@ -92,6 +92,10 @@ export function makeFakeTransport(
       record("updateThreadVars", threadId, vars);
     },
 
+    async updateThreadCollections(threadId, collections) {
+      record("updateThreadCollections", threadId, collections);
+    },
+
     async listMessages(threadId) {
       record("listMessages", threadId);
       return opts.messages?.[threadId] ?? [];

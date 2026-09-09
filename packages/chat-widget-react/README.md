@@ -268,7 +268,11 @@ const chat = useRef<UraiChatHandle>(null);
 
 chat.current?.setVars({ plan: "pro" });                  // update active thread
 chat.current?.setVars(null);                             // clear
-chat.current?.startConversation({ topic: "billing" });   // seed a fresh thread
+chat.current?.setCollections(["9f1c…"]);                 // scope knowledge
+chat.current?.startConversation({                        // seed a fresh thread
+  vars: { topic: "billing" },
+  collections: ["9f1c…"],
+});
 chat.current?.setUser({ id: "user_43", vars: { … } });   // switch visitor
 chat.current?.sendMessage("Where is my order?");
 ```
@@ -402,7 +406,32 @@ Required: `widgetToken`, `userId`. Optional: `baseUrl`, `vars`, `theme`,
 | `theme`, `layout`, `behavior` | Applied live via `configure()` (deep-compared). Structural changes (mode/position/header/welcome/suggested) rebuild the panel and clear the visible conversation. |
 | `userId` | `setUser()` — resets the conversation for the new visitor. |
 | `vars` | `setVars()` — updates the current/next thread's context. |
+| `collections` | `setCollections()` — knowledge collection **ids** scoping the conversation, on top of the assistant's own. |
 | `widgetToken`, `baseUrl`, `mode` | Destroys and recreates the widget. |
+
+
+## Scoping knowledge (collections)
+
+An assistant can have knowledge collections attached at definition time. The
+`collections` prop lets the host add more for one conversation — the product
+area the visitor is in, say. The two are **unioned**: the assistant's own
+collections are a floor this can add to and never narrow.
+
+Pass collection **ids**, not slugs. A widget token lives in your page source,
+so the unguessable id is what keeps the rest of your organization's
+collections out of reach; the server checks each id against the organization
+that owns the widget and rejects the call if one doesn't belong (surfaced as
+an `error` event, panel still usable).
+
+Scope is per conversation — every turn of a thread inherits it.
+
+```tsx
+<UraiChatWidget
+  widgetToken="<widget token>"
+  userId="user_42"
+  collections={[billingCollectionId]}
+/>
+```
 
 The `ref` exposes the full `WidgetController` (`open`, `close`,
 `sendMessage`, `startConversation`, `on`, …). Mount/unmount is idempotent
