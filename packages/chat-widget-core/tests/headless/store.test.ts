@@ -685,3 +685,99 @@ describe("store: start/stop generation", () => {
     ).toBe(false);
   });
 });
+
+describe("store: workspace files", () => {
+  const history = {
+    "t-cached": [
+      {
+        id: "m1",
+        thread_id: "t-cached",
+        message_idx: 1,
+        role: "assistant" as const,
+        content: "Here is the chart.",
+        reasoning: null,
+        created_at: "2026-01-01T00:00:00Z",
+        files: [{ path: "/out/chart.svg", bytes: 100 }],
+      },
+      {
+        id: "m2",
+        thread_id: "t-cached",
+        message_idx: 3,
+        role: "assistant" as const,
+        content: "",
+        reasoning: null,
+        created_at: "2026-01-01T00:00:01Z",
+        files: [{ path: "/out/data.csv", bytes: 9 }],
+      },
+    ],
+  };
+
+  it("hydrates history files, keeping a files-only turn", async () => {
+    const transport = makeFakeTransport({ messages: history });
+    const { store } = makeStore({ transport, session: memorySession("t-cached") });
+    await store.actions.start();
+    const messages = store.getState().messages;
+    expect(messages.map((m) => m.files)).toEqual([
+      [{ path: "/out/chart.svg", bytes: 100 }],
+      [{ path: "/out/data.csv", bytes: 9 }],
+    ]);
+  });
+
+  it("shows only what this turn made or changed, replacing on each listing", async () => {
+    const transport = makeFakeTransport({ messages: history });
+    const { store } = makeStore({ transport, session: memorySession("t-cached") });
+    await store.actions.start();
+    await store.actions.send("make the bars blue");
+    const h = stream(transport);
+
+    h.onToolCallCompleted?.({
+      id: "c1",
+      ok: true,
+      files: [
+        { path: "/out/chart.svg", bytes: 100 },
+        { path: "/out/data.csv", bytes: 9 },
+      ],
+    });
+    expect(store.getState().stream?.files).toEqual([]);
+
+    h.onToolCallCompleted?.({
+      id: "c2",
+      ok: true,
+      files: [
+        { path: "/out/chart.svg", bytes: 131 },
+        { path: "/out/data.csv", bytes: 9 },
+      ],
+    });
+    expect(store.getState().stream?.files).toEqual([{ path: "/out/chart.svg", bytes: 131 }]);
+
+    // A call that reports no listing leaves the row alone.
+    h.onToolCallCompleted?.({ id: "c3", ok: true });
+    expect(store.getState().stream?.files).toHaveLength(1);
+
+    h.onChunk?.("Done.");
+    h.onDone?.();
+    expect(store.getState().messages.at(-1)?.files).toEqual([
+      { path: "/out/chart.svg", bytes: 131 },
+    ]);
+  });
+
+  it("commits no files key for a turn that made none", async () => {
+    const { store, transport } = makeStore();
+    await store.actions.send("hello");
+    stream(transport).onChunk?.("hi");
+    stream(transport).onDone?.();
+    expect(store.getState().messages.at(-1)?.files).toBeUndefined();
+  });
+
+  it("fetches a file from the current thread", async () => {
+    const { store, transport } = makeStore();
+    expect(await store.actions.fetchFileBlob("/out/a.png")).toBeNull();
+    await store.actions.send("hello");
+    const blob = await store.actions.fetchFileBlob("/out/a.png");
+    expect(blob).not.toBeNull();
+    expect(transport.calls.at(-1)).toEqual({
+      method: "fetchThreadFile",
+      args: ["t1", "/out/a.png"],
+    });
+  });
+});

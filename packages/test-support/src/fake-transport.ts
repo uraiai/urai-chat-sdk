@@ -126,6 +126,11 @@ export function makeFakeTransport(
       return new Blob(["fake"]);
     },
 
+    async fetchThreadFile(threadId, path) {
+      record("fetchThreadFile", threadId, path);
+      return new Blob(["fake"]);
+    },
+
     streamMessage(messageId, h) {
       record("streamMessage", messageId);
       handlers = h;

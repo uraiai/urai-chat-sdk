@@ -100,7 +100,7 @@ Keys: `root`, `header`, `brandLogo`, `title`, `threadTrigger`,
 `reasoningBody`, `toolActivity`, `thinkingIndicator`,
 `scrollToBottomButton`, `emptyState`, `suggestedQuestions`,
 `suggestedQuestion`, `attachmentList`, `imageAttachment`,
-`fileAttachment`, `composer`, `composerInput`, `sendButton`,
+`fileAttachment`, `fileList`, `composer`, `composerInput`, `sendButton`,
 `stopButton`, `attachButton`, `pendingAttachmentList`,
 `pendingAttachment`, `footer`.
 
@@ -147,7 +147,7 @@ handlers — spread them and your replacement stays accessible.
 Slot names: `Header`, `UserMessage`, `AssistantMessage`, `ErrorMessage`,
 `StreamingMessage`, `Markdown`, `Reasoning`, `ToolActivity`,
 `ToolCallCard`, `ThinkingIndicator`, `ScrollToBottomButton`, `EmptyState`,
-`SuggestedQuestions`, `AttachmentList`, `Composer`, `ComposerInput`,
+`SuggestedQuestions`, `AttachmentList`, `FileList`, `Composer`, `ComposerInput`,
 `SendButton`, `AttachButton`, `PendingAttachment`, `ThreadSwitcher`,
 `ThreadItem`, `Footer`, `Fallback`.
 
@@ -328,7 +328,7 @@ Colours come from a seed/semantic token split resolved through
 rather than being ignored, and foregrounds that fail WCAG AA against their
 own fill are corrected automatically.
 
-## Rendering: markdown, SVG and tool calls
+## Rendering: markdown, SVG, files and tool calls
 
 Assistant messages render through `react-markdown` with GFM, sanitized
 with `rehype-sanitize`.
@@ -347,10 +347,34 @@ re-parsed; the settled prefix is memoized. Combined with per-frame
 coalescing in the store, a long reply costs a bounded amount of work per
 frame instead of re-parsing the whole message per token.
 
+Files the assistant writes to the conversation's workspace — a chart, a
+CSV, a report — show on the turn that made them, through the `FileList`
+slot: images (PNG, JPEG, GIF, WebP, AVIF, BMP and SVG) inline, anything else
+as a download link with its size. They appear live as each tool call
+finishes, and a file shows again on a later turn only if that turn changed
+it. The visitor's own uploads, scratch files and canvas apps are not listed.
+
+Bytes are fetched through the store (`useChatActions().fetchFileBlob(path)`)
+with the visitor header and shown via object URLs; there is no file URL to
+put in an `<img src>`. A raster image opens full size in a new tab. An SVG
+**downloads** instead: an object URL has your page's origin, so opening
+agent-written SVG in a tab would run any script in it as your site. A
+replacement `FileList` should keep that rule (`isScriptableFile` from
+`@uraiai/chat-widget-core/headless`).
+
 `<urai-tool-call>` markers become a real `ToolCallCard` component you can
 replace. It shows the server's summary and nothing more: arguments and
 output stay on the authenticated channel the widget does not subscribe to,
 which is the correct privacy posture for an embedded chat.
+
+The card is **hidden by default**: a turn that calls tools several times
+leaves behind a column of near-identical "Working" chips that cost vertical
+space and say nothing the narration doesn't. Turn them on with
+`behavior={{ showToolCalls: true }}` (`behavior.dev` implies it).
+
+The live `ToolActivity` row on a streaming bubble is **not** affected — it
+always shows. It is transient and self-replacing rather than accumulating,
+and it is the only feedback the visitor gets during a long silent tool call.
 
 ## Accessibility
 

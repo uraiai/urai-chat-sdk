@@ -41,6 +41,9 @@ export interface UraiChatLabels {
   attachmentFailed(fileName: string): string;
   attachmentUploadFailed: string;
   downloadAttachment(fileName: string): string;
+  /** Accessible name for the group of files an assistant turn produced. */
+  files: string;
+  openImage(fileName: string): string;
 
   footerText: string;
   disclaimer: string;
@@ -109,6 +112,8 @@ export const DEFAULT_LABELS: UraiChatLabels = {
   attachmentFailed: (f) => `${f} — failed`,
   attachmentUploadFailed: "Attachment upload failed",
   downloadAttachment: (f) => `Download ${f}`,
+  files: "Files",
+  openImage: (f) => `Open ${f}`,
 
   footerText: "",
   disclaimer: "",

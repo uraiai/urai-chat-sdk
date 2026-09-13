@@ -70,6 +70,16 @@ export function replaceUraiToolCallMarkers(
 }
 
 /**
+ * Drop `<urai-tool-call id="…"/>` markers without leaving a chip behind
+ * — the default. Blank lines the markers sat between collapse into one
+ * so removing a marker mid-prose does not open a gap.
+ */
+export function stripUraiToolCallMarkers(text: string): string {
+  const re = /<urai-tool-call\b([^>]*)>(?:\s*<\/urai-tool-call>)?/gi;
+  return text.replace(re, "").replace(/\n{3,}/g, "\n\n");
+}
+
+/**
  * Same shape as `replaceUraiToolCallMarkers` but for dev mode: shows
  * a developer-friendly label (truncated id, falling back to ordinal)
  * alongside the summary when one exists.
@@ -306,6 +316,12 @@ export interface RenderMarkdownOptions {
    */
   dev?: boolean;
   /**
+   * Render a chip at each `<urai-tool-call>` marker. Default false —
+   * the markers are stripped, so a turn full of tool calls reads as
+   * prose instead of a stack of "Code action" chips. Implied by `dev`.
+   */
+  showToolCalls?: boolean;
+  /**
    * Map of `<urai-tool-call id="…"/>` ids to their async-generated
    * summaries. Populated from `ServerMessage.tool_call_summaries`
    * for history; undefined for live streams.
@@ -321,7 +337,9 @@ export function renderMarkdown(
   let prepared = text;
   if (!dev) {
     prepared = stripJsActionFences(prepared);
-    prepared = replaceUraiToolCallMarkers(prepared, opts.toolSummaries);
+    prepared = opts.showToolCalls
+      ? replaceUraiToolCallMarkers(prepared, opts.toolSummaries)
+      : stripUraiToolCallMarkers(prepared);
   } else {
     prepared = devReplaceMarkers(prepared, opts.toolSummaries);
   }

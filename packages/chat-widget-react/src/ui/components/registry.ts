@@ -6,6 +6,7 @@ import type {
   PendingAttachment,
   StreamSlice,
   ThreadSummary,
+  WorkspaceFile,
 } from "@uraiai/chat-widget-core/headless";
 import type { UraiChatClassNames } from "../class-names";
 
@@ -41,6 +42,8 @@ export interface MessageSlotProps {
   isLast: boolean;
   content: ReactNode;
   attachments: ReactNode | null;
+  /** Workspace files the turn produced, pre-rendered by the `FileList` slot. */
+  files: ReactNode | null;
 }
 
 export interface StreamingMessageSlotProps {
@@ -48,6 +51,8 @@ export interface StreamingMessageSlotProps {
   content: ReactNode;
   reasoning: ReactNode | null;
   toolActivity: ReactNode | null;
+  /** Files the turn has produced so far, pre-rendered by `FileList`. */
+  files: ReactNode | null;
 }
 
 export interface MarkdownSlotProps {
@@ -133,6 +138,15 @@ export interface AttachmentListSlotProps {
   message: ChatMessage;
 }
 
+/**
+ * Files the assistant wrote to the thread's workspace — charts, CSVs,
+ * reports. Never empty when rendered. Fetch bytes with
+ * `useChatActions().fetchFileBlob(path)`; there is no URL to use.
+ */
+export interface FileListSlotProps {
+  files: WorkspaceFile[];
+}
+
 export interface ThreadItemSlotProps {
   thread: ThreadSummary;
   isActive: boolean;
@@ -176,6 +190,7 @@ export interface UraiChatComponents {
   EmptyState: ComponentType<EmptyStateSlotProps>;
   SuggestedQuestions: ComponentType<SuggestedQuestionsSlotProps>;
   AttachmentList: ComponentType<AttachmentListSlotProps>;
+  FileList: ComponentType<FileListSlotProps>;
   Composer: ComponentType<ComposerSlotProps>;
   ComposerInput: ComponentType<
     React.TextareaHTMLAttributes<HTMLTextAreaElement>

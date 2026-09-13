@@ -261,6 +261,11 @@ ${w(".urai-attachment-file")} {
   font-size: var(--urai-font-size-xs); color: inherit; text-decoration: none;
 }
 ${w(".urai-attachment-file svg")} { width: 14px; height: 14px; flex: 0 0 auto; }
+${w(".urai-files")} { margin-top: var(--urai-space-5); }
+${w(".urai-file-image-link")} { display: block; max-width: 100%; border-radius: var(--urai-radius-sm); }
+/* Charts and diagrams, not photos: show all of one at the bubble's width. */
+${w(".urai-file-image")} { display: block; max-width: 100%; max-height: 280px; object-fit: contain; }
+${w(".urai-file-size")} { flex: 0 0 auto; color: var(--urai-color-text-muted); }
 
 ${w(".urai-thread-switcher")} {
   position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column;

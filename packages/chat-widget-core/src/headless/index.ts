@@ -64,6 +64,14 @@ export {
 
 export { hydrateHistory, commitStream } from "./messages";
 
+export {
+  freshFiles,
+  isImageFile,
+  isScriptableFile,
+  shownFileSizes,
+  workspaceFileName,
+} from "./files";
+
 export type {
   ChatAttachment,
   ChatMessage,
@@ -82,4 +90,5 @@ export type {
   ThreadSummary,
   WidgetAttachment,
   WidgetMessageAttachment,
+  WorkspaceFile,
 } from "../transport";

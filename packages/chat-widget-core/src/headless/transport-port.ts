@@ -48,6 +48,7 @@ export interface ChatTransport {
 
   uploadAttachment(file: File): Promise<WidgetAttachment>;
   fetchAttachment(messageId: string, attachmentId: string): Promise<Blob>;
+  fetchThreadFile(threadId: string, path: string): Promise<Blob>;
 
   /** Returns a teardown function that closes the stream. */
   streamMessage(messageId: string, handlers: StreamHandlers): () => void;

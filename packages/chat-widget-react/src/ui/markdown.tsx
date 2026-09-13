@@ -7,6 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { visit } from "unist-util-visit";
 import { usePresentation } from "./context";
+import { useChatConfig } from "./hooks";
 import { cx } from "./class-names";
 
 /**
@@ -156,7 +157,14 @@ const ToolSummaryContext = createContext<Record<string, string>>({});
 function UraiToolCallMarker(props: { id?: string }) {
   const summaries = useContext(ToolSummaryContext);
   const { components, classNames, unstyled } = usePresentation();
+  const { behavior } = useChatConfig();
   const summary = props.id ? summaries[props.id] : undefined;
+  // Off unless the embedder opts in: a turn that calls tools several
+  // times would otherwise stack up a column of near-identical chips.
+  // Gated here rather than inside the default card so an override slot
+  // obeys the same switch. The live activity row is separate and always
+  // shows.
+  if (!behavior.showToolCalls && !behavior.dev) return null;
   const Slot = components.ToolCallCard;
   return <Slot id={props.id} summary={summary} classNames={classNames} unstyled={unstyled} />;
 }

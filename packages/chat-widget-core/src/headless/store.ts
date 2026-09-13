@@ -21,6 +21,7 @@ import type { WidgetEvent } from "../events";
 import { createReasoning } from "./reasoning";
 import { createToolActivity } from "./tool-activity";
 import { hydrateHistory, commitStream } from "./messages";
+import { freshFiles, shownFileSizes } from "./files";
 import { createNullSessionStore, type SessionStore } from "./persistence";
 import type { ChatTransport } from "./transport-port";
 import type {
@@ -72,6 +73,16 @@ export interface ChatActions {
    * files to another through the shared widget token.
    */
   fetchAttachmentBlob(attachment: ChatAttachment): Promise<Blob | null>;
+  /**
+   * Fetch a workspace file from the current thread. Same reason as
+   * attachments for going through the store. `null` on failure or with
+   * no thread.
+   *
+   * Show an image through an object URL in an `<img>`, and offer anything
+   * else as a download — never open the object URL of an SVG or HTML
+   * file in a tab (see `isScriptableFile`).
+   */
+  fetchFileBlob(path: string): Promise<Blob | null>;
   setUser(id: string, vars?: WidgetVars | null): void;
   setVars(vars: WidgetVars | null): void;
   /**
@@ -301,6 +312,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         content: "",
         reasoning: null,
         tool: null,
+        files: [],
         attached: false,
       },
     });
@@ -355,10 +367,16 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         tools.start(id, fn_name);
         syncModels();
       },
-      onToolCallCompleted({ id }) {
+      onToolCallCompleted({ id, files }) {
         if (g !== gen) return;
         tools.complete(id);
         syncModels();
+        // Each listing is the whole workspace, so it replaces what the
+        // turn showed before rather than adding to it.
+        if (files) {
+          attach();
+          patchStream({ files: freshFiles(files, shownFileSizes(state.messages)) });
+        }
       },
       onToolCallSummary({ id, summary }) {
         if (g !== gen) return;
@@ -578,6 +596,17 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         );
       } catch (e) {
         console.warn("[UraiChat] attachment fetch failed:", e);
+        return null;
+      }
+    },
+
+    async fetchFileBlob(path) {
+      const threadId = state.threadId;
+      if (!deps.transport || !threadId) return null;
+      try {
+        return await deps.transport.fetchThreadFile(threadId, path);
+      } catch (e) {
+        console.warn("[UraiChat] file fetch failed:", e);
         return null;
       }
     },

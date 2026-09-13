@@ -165,3 +165,41 @@ describe("renderMarkdown — raw unfenced SVG", () => {
     expect(html).toContain("intro");
   });
 });
+
+describe("renderMarkdown — tool-call markers", () => {
+  const text = [
+    "Let me check.",
+    '<urai-tool-call id="c1" ord="1"></urai-tool-call>',
+    "Done.",
+  ].join("\n\n");
+
+  it("strips the markers by default, leaving the prose intact", () => {
+    const html = renderMarkdown(text, { toolSummaries: { c1: "Fetched prices" } });
+    expect(html).not.toContain("ucw-tool-summary");
+    expect(html).not.toContain("Fetched prices");
+    expect(html).not.toContain("urai-tool-call");
+    expect(html).toContain("Let me check.");
+    expect(html).toContain("Done.");
+  });
+
+  it("renders the summary chip when tool calls are opted in", () => {
+    const html = renderMarkdown(text, {
+      showToolCalls: true,
+      toolSummaries: { c1: "Fetched prices" },
+    });
+    expect(html).toContain("ucw-tool-summary");
+    expect(html).toContain("Fetched prices");
+  });
+
+  it("falls back to a placeholder chip while the summary is pending", () => {
+    const html = renderMarkdown(text, { showToolCalls: true });
+    expect(html).toContain("ucw-tool-summary-pending");
+    expect(html).toContain("Code action");
+  });
+
+  it("shows the dev-labelled chip in dev mode without the opt-in", () => {
+    const html = renderMarkdown(text, { dev: true, toolSummaries: { c1: "Fetched prices" } });
+    expect(html).toContain("ucw-tool-summary-dev");
+    expect(html).toContain("Fetched prices");
+  });
+});

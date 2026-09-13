@@ -431,6 +431,15 @@ export const baseStyles = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Assistant-made pictures are charts and diagrams, not photos: show all of
+   one rather than cropping it to a thumbnail, at the bubble's width. */
+.ucw-file-image {
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  background: var(--ucw-background);
+}
+.ucw-file-size { flex: 0 0 auto; color: var(--ucw-muted); font-size: 11px; }
 .ucw-composer textarea {
   flex: 1;
   resize: none;

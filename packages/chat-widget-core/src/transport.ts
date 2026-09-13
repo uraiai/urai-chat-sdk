@@ -43,6 +43,24 @@ export interface ServerMessage {
    * action" placeholder.
    */
   tool_call_summaries?: Record<string, string> | null;
+  /**
+   * Workspace files this message produced or changed — a chart, a CSV, a
+   * report. The server has already dropped the visitor's own uploads,
+   * scratch files and canvas apps, and repeats a file only on a message
+   * where its size changed. Absent when there are none.
+   */
+  files?: WorkspaceFile[] | null;
+}
+
+/**
+ * A file the assistant wrote to the thread's workspace. Path and size
+ * only — fetch the bytes with `Transport.fetchThreadFile`, which scopes
+ * the read to this visitor.
+ */
+export interface WorkspaceFile {
+  /** Absolute workspace path, e.g. `/out/chart.svg`. */
+  path: string;
+  bytes: number;
 }
 
 /**
@@ -249,6 +267,29 @@ export class Transport {
    * read any other visitor's files). The caller should use the
    * returned blob via `URL.createObjectURL`.
    */
+  /**
+   * Fetch a file from a thread's workspace as a Blob. Same constraint as
+   * `fetchAttachment`: the read is only scoped to this visitor through the
+   * header, so it can never be a plain `<img src>`.
+   *
+   * The Blob's type is the server's `Content-Type`. An SVG comes back as
+   * `image/svg+xml` — safe inside an `<img>`, which runs no script, but a
+   * view must never *navigate* to its object URL: that URL has the host
+   * page's origin, and the file was written by agent code.
+   */
+  async fetchThreadFile(threadId: string, path: string): Promise<Blob> {
+    const encoded = path
+      .split("/")
+      .filter(Boolean)
+      .map(encodeURIComponent)
+      .join("/");
+    const res = await fetch(this.url(`/threads/${threadId}/files/${encoded}`), {
+      headers: { "x-widget-user-id": this.opts.widgetUserId },
+    });
+    if (!res.ok) throw new Error(`file fetch failed: ${res.status}`);
+    return res.blob();
+  }
+
   async fetchAttachment(messageId: string, attachmentId: string): Promise<Blob> {
     const res = await fetch(
       this.url(`/attachments/${messageId}/${attachmentId}`),
@@ -283,9 +324,10 @@ export class Transport {
       handlers.onReasoning?.((e as MessageEvent).data),
     );
     // Tool-call lifecycle. Payloads are minimal — `{id, fn_name}` on
-    // start, `{id, ok}` on completion. Enough for a status pill; the
-    // full args/response stay on the authenticated thread-events
-    // channel which the widget doesn't subscribe to.
+    // start, `{id, ok, files?}` on completion. Enough for a status pill
+    // and the files list; the full args/response stay on the
+    // authenticated thread-events channel which the widget doesn't
+    // subscribe to.
     es.addEventListener("tool_call_started", (e) => {
       try {
         const data = JSON.parse((e as MessageEvent).data) as { id: string; fn_name: string };
@@ -294,7 +336,7 @@ export class Transport {
     });
     es.addEventListener("tool_call_completed", (e) => {
       try {
-        const data = JSON.parse((e as MessageEvent).data) as { id: string; ok: boolean };
+        const data = JSON.parse((e as MessageEvent).data) as ToolCallCompletedEvent;
         handlers.onToolCallCompleted?.(data);
       } catch { /* ignore malformed */ }
     });
@@ -359,12 +401,22 @@ export class Transport {
   }
 }
 
+export interface ToolCallCompletedEvent {
+  id: string;
+  ok: boolean;
+  /**
+   * The workspace's visitor-facing files after this call — the **whole**
+   * listing, not just what the call wrote. Absent when there are none.
+   */
+  files?: WorkspaceFile[];
+}
+
 export interface StreamHandlers {
   onChunk?: (chunk: string) => void;
   onReasoning?: (chunk: string) => void;
   onCommand?: (command: unknown) => void;
   onToolCallStarted?: (call: { id: string; fn_name: string }) => void;
-  onToolCallCompleted?: (call: { id: string; ok: boolean }) => void;
+  onToolCallCompleted?: (call: ToolCallCompletedEvent) => void;
   onToolCallSummary?: (call: { id: string; summary: string }) => void;
   onComplete?: (message: ServerMessage | null) => void;
   onDone?: () => void;

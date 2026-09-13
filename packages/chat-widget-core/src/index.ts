@@ -32,4 +32,5 @@ export type {
   CreateThreadResult,
   WidgetAttachment,
   WidgetMessageAttachment,
+  WorkspaceFile,
 } from "./transport";

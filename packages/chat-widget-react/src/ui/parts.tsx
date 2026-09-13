@@ -163,18 +163,20 @@ export function Message({ id, isLast = false }: { id: string; isLast?: boolean }
   const Attachments = components.AttachmentList;
   const attachments =
     message.attachments.length > 0 ? <Attachments message={message} /> : null;
+  const Files = components.FileList;
+  const files = message.files?.length ? <Files files={message.files} /> : null;
 
   if (message.role === "user") {
     const Slot = components.UserMessage;
     return (
       <MessageProvider id={id}>
-        <Slot message={message} isLast={isLast} content={message.content} attachments={attachments} />
+        <Slot message={message} isLast={isLast} content={message.content} attachments={attachments} files={null} />
       </MessageProvider>
     );
   }
   if (message.role === "error") {
     const Slot = components.ErrorMessage;
-    return <Slot message={message} isLast={isLast} content={message.content} attachments={null} />;
+    return <Slot message={message} isLast={isLast} content={message.content} attachments={null} files={null} />;
   }
 
   const Slot = components.AssistantMessage;
@@ -191,6 +193,7 @@ export function Message({ id, isLast = false }: { id: string; isLast?: boolean }
           />
         }
         attachments={attachments}
+        files={files}
       />
     </MessageProvider>
   );
@@ -237,6 +240,7 @@ export function StreamingMessage() {
   const Slot = components.StreamingMessage;
   const Reasoning = components.Reasoning;
   const ToolActivity = components.ToolActivity;
+  const Files = components.FileList;
   const bodyId = `${idPrefix}-reasoning`;
   const expanded = stream.reasoning?.sealed ? reasoningOpen : true;
 
@@ -267,6 +271,7 @@ export function StreamingMessage() {
           <ToolActivity label={stream.tool.label} completed={stream.tool.completed} />
         ) : null
       }
+      files={stream.files.length > 0 ? <Files files={stream.files} /> : null}
     />
   );
 }

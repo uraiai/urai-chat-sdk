@@ -1,53 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import type { ChatAttachment } from "@uraiai/chat-widget-core/headless";
 import { useChatStore } from "../context";
 import { useIcons, useLabels } from "../hooks";
+import { useBlob, useObjectUrl } from "./object-url";
 
 /**
  * Attachment previews.
  *
- * Deliberately not `<img src={url}>` or `<a download>`: the request
- * needs the `X-Widget-User-Id` header, and the path-embedded widget
- * token alone would let any visitor of the same widget read another
- * visitor's files. So remote attachments are fetched as blobs and shown
- * through an object URL, which is revoked on unmount.
+ * Deliberately not `<img src={url}>` or `<a download>` on a server URL:
+ * the request needs the `X-Widget-User-Id` header, and the path-embedded
+ * widget token alone would let any visitor of the same widget read
+ * another visitor's files. So remote attachments are fetched as blobs and
+ * shown through an object URL, which is revoked on unmount.
  */
 function useAttachmentUrl(attachment: ChatAttachment): string | null {
   const store = useChatStore();
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let revoked = false;
-    let objectUrl: string | null = null;
-
-    async function resolve() {
-      if (attachment.kind === "local") {
-        objectUrl = URL.createObjectURL(attachment.file);
-      } else {
-        // The store owns the transport; a view never fetches directly.
-        const blob = await store.actions
-          .fetchAttachmentBlob?.(attachment)
-          .catch(() => null);
-        if (!blob) return;
-        objectUrl = URL.createObjectURL(blob);
-      }
-      if (revoked) {
-        URL.revokeObjectURL(objectUrl);
-        return;
-      }
-      setUrl(objectUrl);
-    }
-    void resolve();
-
-    return () => {
-      revoked = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [attachment, store]);
-
-  return url;
+  const blob = useBlob(attachment, () =>
+    attachment.kind === "local"
+      ? attachment.file
+      : // The store owns the transport; a view never fetches directly.
+        (store.actions.fetchAttachmentBlob?.(attachment) ?? null),
+  );
+  return useObjectUrl(blob);
 }
 
 function nameOf(a: ChatAttachment): string {

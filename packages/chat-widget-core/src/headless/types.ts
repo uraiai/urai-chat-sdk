@@ -6,6 +6,7 @@ import type {
   ThreadSummary,
   WidgetAttachment,
   WidgetMessageAttachment,
+  WorkspaceFile,
 } from "../transport";
 
 export type WidgetVars = Record<string, unknown>;
@@ -44,6 +45,11 @@ export interface ChatMessage {
    * Server-generated, and may arrive after the turn completes.
    */
   toolSummaries?: Record<string, string>;
+  /**
+   * Workspace files this turn produced or changed. Fetch the bytes with
+   * `actions.fetchFileBlob` — never a URL, see `ChatActions`.
+   */
+  files?: WorkspaceFile[];
 }
 
 /**
@@ -79,6 +85,11 @@ export interface StreamSlice {
   content: string;
   reasoning: { text: string; sealed: boolean } | null;
   tool: ToolActivity | null;
+  /**
+   * Files this turn has produced or changed so far. Replaced — not
+   * appended to — on every tool call that reports a listing.
+   */
+  files: WorkspaceFile[];
   /**
    * False until the first real model output. Views show a "thinking"
    * placeholder instead of an empty bubble while this is false.

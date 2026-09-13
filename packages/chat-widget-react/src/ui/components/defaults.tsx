@@ -6,12 +6,14 @@ import { cx, resolveClass } from "../class-names";
 import { useIcons } from "../hooks";
 import { Markdown } from "../markdown";
 import { AttachmentPreview } from "./attachments";
+import { WorkspaceFilePreview } from "./files";
 import type {
   AttachButtonSlotProps,
   AttachmentListSlotProps,
   ComposerSlotProps,
   EmptyStateSlotProps,
   FallbackSlotProps,
+  FileListSlotProps,
   FooterSlotProps,
   HeaderSlotProps,
   MarkdownSlotProps,
@@ -107,7 +109,10 @@ export function DefaultAssistantMessage(props: MessageSlotProps) {
       data-urai-part="assistant-message"
     >
       <span className="urai-sr-only">{labels.messageRolePrefix("assistant")}</span>
-      <div className="urai-bubble">{props.content}</div>
+      <div className="urai-bubble">
+        {props.content}
+        {props.files}
+      </div>
       {props.attachments}
     </li>
   );
@@ -140,7 +145,10 @@ export function DefaultStreamingMessage(props: StreamingMessageSlotProps) {
     >
       {props.reasoning}
       {props.toolActivity}
-      <div className="urai-bubble">{props.content}</div>
+      <div className="urai-bubble">
+        {props.content}
+        {props.files}
+      </div>
     </li>
   );
 }
@@ -298,6 +306,24 @@ export function DefaultAttachmentList(props: AttachmentListSlotProps) {
     >
       {props.message.attachments.map((a, i) => (
         <AttachmentPreview key={i} attachment={a} />
+      ))}
+    </div>
+  );
+}
+
+export function DefaultFileList(props: FileListSlotProps) {
+  const cls = useCls();
+  const { labels } = usePresentation();
+  if (props.files.length === 0) return null;
+  return (
+    <div
+      className={cls("fileList", "urai-attachments urai-files")}
+      data-urai-part="file-list"
+      role="group"
+      aria-label={labels.files}
+    >
+      {props.files.map((f) => (
+        <WorkspaceFilePreview key={`${f.path}@${f.bytes}`} file={f} />
       ))}
     </div>
   );
@@ -467,6 +493,7 @@ export const defaultComponents: UraiChatComponents = {
   EmptyState: DefaultEmptyState,
   SuggestedQuestions: DefaultSuggestedQuestions,
   AttachmentList: DefaultAttachmentList,
+  FileList: DefaultFileList,
   Composer: DefaultComposer,
   ComposerInput: DefaultComposerInput,
   SendButton: DefaultSendButton,

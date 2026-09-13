@@ -46,9 +46,22 @@ export interface WidgetBehavior {
    * inline in assistant prose so developers can see exactly what the
    * agent ran while iterating on prompts/tools. When false (default),
    * both are stripped — embedders' end-users see the model's
-   * natural-language narration plus the activity pill, never raw code.
+   * natural-language narration, never raw code.
    */
   dev: boolean;
+  /**
+   * Show a persistent chip in the transcript at each `<urai-tool-call>`
+   * marker, carrying the server's summary of what that call did. False
+   * by default: a turn that calls tools several times leaves behind a
+   * column of near-identical "Working" chips that cost vertical space
+   * in a small panel and tell the visitor nothing the narration
+   * doesn't. `dev: true` shows them regardless.
+   *
+   * Independent of the live activity row on a streaming bubble, which
+   * always shows — it is transient, replaces itself as calls come and
+   * go, and is the only feedback during a long silent tool call.
+   */
+  showToolCalls: boolean;
 }
 
 export interface ResolvedConfig {
@@ -98,6 +111,7 @@ export const DEFAULT_BEHAVIOR: WidgetBehavior = {
   persistAcrossSessions: true,
   newConversationLabel: "New conversation",
   dev: false,
+  showToolCalls: false,
 };
 
 function isObject(v: unknown): v is Record<string, unknown> {

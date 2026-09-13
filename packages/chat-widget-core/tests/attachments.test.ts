@@ -105,3 +105,39 @@ describe("Transport.fetchAttachment", () => {
     );
   });
 });
+
+describe("Transport.fetchThreadFile", () => {
+  it("builds the widget file URL, encoding each path segment", async () => {
+    const blob = new Blob(["<svg/>"], { type: "image/svg+xml" });
+    const { calls } = installFakeFetch({
+      [`GET /api/widget/v1/${TOKEN}/threads/t1/files/out/q3%20chart.svg`]: () =>
+        respond({ blob }),
+    });
+    const got = await makeTransport().fetchThreadFile("t1", "/out/q3 chart.svg");
+    expect(calls[0].url).toBe(
+      `https://chat.example.com/api/widget/v1/${TOKEN}/threads/t1/files/out/q3%20chart.svg`,
+    );
+    expect(got.type).toBe("image/svg+xml");
+  });
+
+  // Same rule as attachments: the thread's files are only this visitor's
+  // through the header.
+  it("sends the visitor header", async () => {
+    const { calls } = installFakeFetch({
+      [`GET /api/widget/v1/${TOKEN}/threads/t1/files/out/a.csv`]: () => respond({}),
+    });
+    await makeTransport().fetchThreadFile("t1", "/out/a.csv");
+    const headers = calls[0].init?.headers as Record<string, string>;
+    expect(headers["x-widget-user-id"]).toBe("visitor-1");
+  });
+
+  it("throws on a non-2xx status", async () => {
+    installFakeFetch({
+      [`GET /api/widget/v1/${TOKEN}/threads/t1/files/out/a.csv`]: () =>
+        respond({ status: 404 }),
+    });
+    await expect(makeTransport().fetchThreadFile("t1", "/out/a.csv")).rejects.toThrow(
+      "file fetch failed: 404",
+    );
+  });
+});

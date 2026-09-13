@@ -10,6 +10,7 @@ import type {
   Transport,
   WidgetAttachment,
   WidgetMessageAttachment,
+  WorkspaceFile,
 } from "./transport";
 import { clearThread, loadThread, saveThread } from "./session";
 import type { WidgetEvent } from "./events";
@@ -18,6 +19,12 @@ import { baseStyles } from "./styles";
 // Framework-agnostic models. This file owns the DOM; these own the state.
 import { createToolActivity } from "./headless/tool-activity";
 import { createReasoning } from "./headless/reasoning";
+import {
+  freshFiles,
+  isImageFile,
+  isScriptableFile,
+  workspaceFileName,
+} from "./headless/files";
 import {
   filterThreads,
   groupByRecency,
@@ -161,6 +168,16 @@ export function mountWidget(args: MountArgs): MountedWidget {
   const previewMode = !!args.previewMode;
   let config = args.config;
   /**
+   * Whether the persistent per-marker chip is rendered in the prose. Off
+   * unless the embedder opts in; dev mode implies it. The live activity
+   * row is not gated by this — it is transient and self-replacing.
+   * Read at call time, like `behavior.dev`, because `applyConfig`
+   * reassigns `config`.
+   */
+  const showToolCalls = () =>
+    config.behavior.showToolCalls || config.behavior.dev;
+
+  /**
    * Renders markdown with `behavior.dev` threaded through every call.
    * Without dev mode the renderer strips agent-mode code-action fences
    * and `<urai-tool-call>` markers so embedders' end-users don't see
@@ -171,7 +188,12 @@ export function mountWidget(args: MountArgs): MountedWidget {
   const renderMd = (
     text: string,
     toolSummaries?: Record<string, string>,
-  ) => renderMarkdown(text, { dev: config.behavior.dev, toolSummaries });
+  ) =>
+    renderMarkdown(text, {
+      dev: config.behavior.dev,
+      showToolCalls: showToolCalls(),
+      toolSummaries,
+    });
 
   // Set by destroy(). Async continuations (auto-restore, stream handlers,
   // preview timers) check it so a torn-down widget never mutates DOM or
@@ -228,6 +250,12 @@ export function mountWidget(args: MountArgs): MountedWidget {
   let pendingLocalIdSeq = 0;
   /** ObjectURLs we minted for inline attachment previews; revoked on reset/destroy. */
   const attachmentObjectUrls: string[] = [];
+  /**
+   * The size each workspace path had where the transcript last showed it.
+   * A live turn shows only files new to this map or changed in size — the
+   * rule the server applies to history. Cleared whenever the transcript is.
+   */
+  const shownFileSizes = new Map<string, number>();
 
   function applyLayoutAttrs() {
     root.dataset.mode = config.layout.mode;
@@ -735,6 +763,124 @@ export function mountWidget(args: MountArgs): MountedWidget {
     link.remove();
   }
 
+  // ---- Workspace files ---------------------------------------------------
+
+  /** A transparent 1×1, so an image reserves no broken-icon while it loads. */
+  const BLANK_IMAGE =
+    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'></svg>";
+
+  function formatBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function fetchFileUrl(threadId: string, path: string, download: boolean) {
+    if (!transport) return null;
+    try {
+      let blob = await transport.fetchThreadFile(threadId, path);
+      // A download never navigates, but retyping anything that could run
+      // script makes sure its object URL is inert even if something does.
+      if (download && isScriptableFile(path)) {
+        blob = new Blob([blob], { type: "application/octet-stream" });
+      }
+      const url = URL.createObjectURL(blob);
+      attachmentObjectUrls.push(url);
+      return url;
+    } catch (e) {
+      console.warn("[UraiChat] file fetch failed:", e);
+      return null;
+    }
+  }
+
+  function saveUrl(url: string, fileName: string) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  /**
+   * One workspace file: an image inline, anything else a download chip.
+   *
+   * Clicking a raster image opens it full size, as attachments do. An SVG
+   * **downloads** instead: its object URL has the host page's origin, so
+   * opening it in a tab would run whatever script agent code put in it as
+   * the embedding site. Inside the `<img>` it is inert.
+   */
+  function buildFileItem(threadId: string, file: WorkspaceFile): HTMLElement {
+    const name = workspaceFileName(file.path);
+    if (isImageFile(file.path)) {
+      const img = document.createElement("img");
+      img.className = "ucw-attachment-image ucw-file-image";
+      img.alt = name;
+      img.title = file.path;
+      img.src = BLANK_IMAGE;
+      void fetchFileUrl(threadId, file.path, false).then((url) => {
+        if (!url || destroyed) return;
+        img.src = url;
+        img.addEventListener("click", () => {
+          if (isScriptableFile(file.path)) {
+            void fetchFileUrl(threadId, file.path, true).then((u) => u && saveUrl(u, name));
+          } else {
+            window.open(url, "_blank");
+          }
+        });
+      });
+      return img;
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ucw-attachment-file";
+    button.title = file.path;
+    const size = file.bytes > 0 ? `<span class="ucw-file-size">${formatBytes(file.bytes)}</span>` : "";
+    button.innerHTML = `${ICONS.file}<span class="ucw-attachment-file-name">${escapeHtml(name)}</span>${size}${ICONS.download}`;
+    button.addEventListener("click", () => {
+      void fetchFileUrl(threadId, file.path, true).then((url) => url && saveUrl(url, name));
+    });
+    return button;
+  }
+
+  /**
+   * The files row on an assistant bubble. Re-rendered on every listing a
+   * live turn reports, so items are kept by `path@bytes` across calls:
+   * rebuilding them would refetch every image each time a tool finishes.
+   */
+  function makeFileList(bubble: HTMLDivElement, threadId: string) {
+    let row: HTMLDivElement | null = null;
+    const items = new Map<string, HTMLElement>();
+    let current: WorkspaceFile[] = [];
+    return {
+      get files() {
+        return current;
+      },
+      set(files: WorkspaceFile[]) {
+        current = files;
+        if (files.length === 0) {
+          row?.remove();
+          row = null;
+          return;
+        }
+        if (!row) {
+          row = document.createElement("div");
+          row.className = "ucw-attachments ucw-files";
+          bubble.appendChild(row);
+        }
+        const next = files.map((f) => {
+          const key = `${f.path}@${f.bytes}`;
+          const el = items.get(key) ?? buildFileItem(threadId, f);
+          items.set(key, el);
+          return el;
+        });
+        row.replaceChildren(...next);
+        scrollToBottom();
+      },
+    };
+  }
+
   function appendAssistantText(
     text: string,
     toolSummaries?: Record<string, string>,
@@ -982,6 +1128,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
   }
 
   function renderHistory(messages: ServerMessage[]) {
+    // Every caller has just emptied the transcript.
+    shownFileSizes.clear();
     for (const m of messages) {
       if (m.role === "user") {
         const atts: RenderableAttachment[] = (m.attachments ?? []).map((a) => ({
@@ -990,7 +1138,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
           attachment: a,
         }));
         appendUserBubble(m.content, atts);
-      } else if (m.role === "assistant" && m.content) {
+      } else if (m.role === "assistant" && (m.content || m.files?.length)) {
         // Pass per-message tool-call summaries so <urai-tool-call>
         // markers render as visible chips with the LLM-generated
         // label rather than vanishing silently.
@@ -998,6 +1146,10 @@ export function mountWidget(args: MountArgs): MountedWidget {
           m.content,
           m.tool_call_summaries ?? undefined,
         );
+        if (m.files?.length) {
+          makeFileList(bubble, m.thread_id).set(m.files);
+          for (const f of m.files) shownFileSizes.set(f.path, f.bytes);
+        }
         // Prepend the collapsed reasoning disclosure if the model
         // produced a thought summary on this turn. Same shape as the
         // post-stream sealed state.
@@ -1079,6 +1231,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
       bubble.appendChild(contentEl);
       const tools = makeToolActivityTracker(bubble);
       const reasoning = makeReasoningSection(bubble);
+      const files = makeFileList(bubble, threadId);
       let bubbleAttached = false;
       let buf = "";
 
@@ -1112,9 +1265,14 @@ export function mountWidget(args: MountArgs): MountedWidget {
           onFirstSignal();
           tools.start(id, fn_name);
         },
-        onToolCallCompleted({ id }) {
+        onToolCallCompleted({ id, files: listing }) {
           if (destroyed) return;
           tools.complete(id);
+          // Each listing is the whole workspace: it replaces the row.
+          if (listing) {
+            onFirstSignal();
+            files.set(freshFiles(listing, shownFileSizes));
+          }
         },
         onToolCallSummary({ id, summary }) {
           if (destroyed) return;
@@ -1136,6 +1294,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
           // Race guard: reasoning-only turns still need a visible bubble.
           onFirstSignal();
           tools.clear();
+          for (const f of files.files) shownFileSizes.set(f.path, f.bytes);
           emit({ type: "assistant-reply", content: buf });
           setSending(false);
         },
@@ -1260,6 +1419,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     }
     clearPendingAttachments();
     revokeAttachmentObjectUrls();
+    shownFileSizes.clear();
     if (body) {
       body.innerHTML = "";
       renderWelcome();
@@ -1284,6 +1444,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
       state.forceNewOnNextCreate = false;
       clearPendingAttachments();
       revokeAttachmentObjectUrls();
+      shownFileSizes.clear();
       if (body) {
         body.innerHTML = "";
         renderWelcome();

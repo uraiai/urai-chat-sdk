@@ -20,10 +20,16 @@ const TOKEN = "11111111-2222-3333-4444-555555555555";
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="100"><circle cx="5" cy="5" r="4" fill="red"/></svg>`;
 
-function mount() {
+function mount(behavior?: Record<string, unknown>) {
   const transport = makeFakeTransport();
   const utils = render(
-    <UraiChat widgetToken={TOKEN} userId="visitor-1" transport={transport} open />,
+    <UraiChat
+      widgetToken={TOKEN}
+      userId="visitor-1"
+      transport={transport}
+      behavior={behavior}
+      open
+    />,
   );
   return { transport, ...utils };
 }
@@ -43,8 +49,11 @@ async function frame() {
  * finds a send-button icon and every assertion below it passes for the
  * wrong reason.
  */
-async function say(text: string): Promise<HTMLElement> {
-  const { transport, container } = mount();
+async function say(
+  text: string,
+  behavior?: Record<string, unknown>,
+): Promise<HTMLElement> {
+  const { transport, container } = mount(behavior);
   await screen.findByRole("textbox");
   await userEvent.type(screen.getByRole("textbox"), "chart me{Enter}");
   await waitFor(() => expect(transport.lastStreamHandlers()).toBeTruthy());
@@ -143,5 +152,26 @@ describe("React view — inline SVG", () => {
     expect(container.querySelector("h1")?.textContent).toBe("Title");
     expect(container.querySelector("strong")?.textContent).toBe("text");
     expect(container.querySelector("pre")).not.toBeNull();
+  });
+});
+
+describe("React view — tool-call markers", () => {
+  const text = [
+    "Let me check.",
+    '<urai-tool-call id="c1" ord="1"></urai-tool-call>',
+    "Done.",
+  ].join("\n\n");
+
+  it("renders no card for the marker by default", async () => {
+    const body = await say(text);
+    expect(body.querySelector('[data-urai-part="tool-call-card"]')).toBeNull();
+    expect(body.textContent).toContain("Let me check.");
+    expect(body.textContent).toContain("Done.");
+  });
+
+  it("renders the card once tool calls are opted in", async () => {
+    const body = await say(text, { showToolCalls: true });
+    expect(body.querySelector('[data-urai-part="tool-call-card"]')).toBeTruthy();
+    expect(body.textContent).toContain("Working");
   });
 });

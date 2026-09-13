@@ -111,6 +111,7 @@ export {
   DefaultEmptyState,
   DefaultErrorMessage,
   DefaultFallback,
+  DefaultFileList,
   DefaultFooter,
   DefaultHeader,
   DefaultMarkdown,
@@ -152,4 +153,5 @@ export type {
   ChatStatus,
   PendingAttachment,
   StreamSlice,
+  WorkspaceFile,
 } from "@uraiai/chat-widget-core/headless";
