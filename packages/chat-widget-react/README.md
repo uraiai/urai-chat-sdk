@@ -100,7 +100,7 @@ Keys: `root`, `header`, `brandLogo`, `title`, `threadTrigger`,
 `reasoningBody`, `toolActivity`, `thinkingIndicator`,
 `scrollToBottomButton`, `emptyState`, `suggestedQuestions`,
 `suggestedQuestion`, `attachmentList`, `imageAttachment`,
-`fileAttachment`, `fileList`, `composer`, `composerInput`, `sendButton`,
+`fileAttachment`, `fileList`, `archiveButton`, `composer`, `composerInput`, `sendButton`,
 `stopButton`, `attachButton`, `pendingAttachmentList`,
 `pendingAttachment`, `footer`.
 
@@ -144,7 +144,7 @@ wrapper never means reimplementing markdown. Props getters
 (`buttonProps`, `itemProps`, `formProps`) carry the ARIA attributes and
 handlers — spread them and your replacement stays accessible.
 
-Slot names: `Header`, `UserMessage`, `AssistantMessage`, `ErrorMessage`,
+Slot names: `Header`, `ArchiveButton`, `UserMessage`, `AssistantMessage`, `ErrorMessage`,
 `StreamingMessage`, `Markdown`, `Reasoning`, `ToolActivity`,
 `ToolCallCard`, `ThinkingIndicator`, `ScrollToBottomButton`, `EmptyState`,
 `SuggestedQuestions`, `AttachmentList`, `FileList`, `Composer`, `ComposerInput`,
@@ -228,6 +228,7 @@ you can do.
 | `useComposer()` | value, `submit()`, and `getFormProps`/`getInputProps`/`getSendButtonProps` |
 | `useThreads()` | grouped + filtered history, `select`, `create`, `setQuery` |
 | `useAttachments()` | pending uploads, `add`, `remove`, `getInputProps`, `getTriggerProps` |
+| `useThreadArchive()` | whether the zip is on offer, `isDownloading`, `download`, `buttonProps` |
 | `useChatActions()` | every action; never re-renders |
 | `useChatSelector(fn, eq?)` | any slice of state, with a bail-out comparator |
 | `useStickToBottom()` | follow-the-bottom without fighting the reader |
@@ -361,6 +362,12 @@ put in an `<img src>`. A raster image opens full size in a new tab. An SVG
 agent-written SVG in a tab would run any script in it as your site. A
 replacement `FileList` should keep that rule (`isScriptableFile` from
 `@uraiai/chat-widget-core/headless`).
+
+Once a file has been shown, the header also offers **Download all files**
+(`ArchiveButton` slot, `useThreadArchive()` hook): the conversation's whole
+workspace as one zip, named after the conversation. It is fetched with the
+visitor header and buffered before saving, so the button reports
+`data-state="downloading"` meanwhile.
 
 `<urai-tool-call>` markers become a real `ToolCallCard` component you can
 replace. It shows the server's summary and nothing more: arguments and

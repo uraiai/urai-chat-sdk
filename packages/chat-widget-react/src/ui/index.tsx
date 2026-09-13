@@ -15,6 +15,7 @@ import {
   ThreadSwitcher,
   ThreadTrigger,
   Viewport,
+  ArchiveButton,
 } from "./parts";
 
 export type UraiChatProps = Omit<ChatRootProps, "children"> & {
@@ -56,6 +57,7 @@ export const Chat = {
   Root: ChatRoot,
   Header,
   ThreadTrigger,
+  ArchiveButton,
   ThreadSwitcher,
   Viewport,
   MessageList,
@@ -71,6 +73,7 @@ export const Chat = {
 export {
   ChatRoot,
   Header as ChatHeader,
+  ArchiveButton as ChatArchiveButton,
   ThreadSwitcher as ChatThreadSwitcher,
   Viewport as ChatViewport,
   MessageList as ChatMessageList,
@@ -97,12 +100,14 @@ export {
   useMessages,
   useStickToBottom,
   useStream,
+  useThreadArchive,
   useThreads,
 } from "./hooks";
 
 // Slots: every default is exported so wrapping is a one-liner.
 export {
   defaultComponents,
+  DefaultArchiveButton,
   DefaultAssistantMessage,
   DefaultAttachButton,
   DefaultAttachmentList,

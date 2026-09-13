@@ -5,6 +5,8 @@ export {
   type WidgetController,
 } from "./create-widget";
 
+export { saveBlob } from "./download";
+
 export type {
   WidgetEvent,
   WidgetEventName,
@@ -32,5 +34,6 @@ export type {
   CreateThreadResult,
   WidgetAttachment,
   WidgetMessageAttachment,
+  ThreadArchive,
   WorkspaceFile,
 } from "./transport";

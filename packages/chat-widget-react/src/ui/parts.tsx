@@ -14,6 +14,7 @@ import {
   useMessages,
   useStickToBottom,
   useStream,
+  useThreadArchive,
   useThreads,
 } from "./hooks";
 
@@ -37,7 +38,23 @@ export function Header() {
         ) : null
       }
       threadTrigger={<ThreadTrigger />}
+      archiveButton={<ArchiveButton />}
       titleId={`${idPrefix}-title`}
+    />
+  );
+}
+
+/** "Download all files" — renders nothing until the conversation has a file. */
+export function ArchiveButton() {
+  const { components, labels } = usePresentation();
+  const archive = useThreadArchive();
+  if (!archive.available) return null;
+  const Slot = components.ArchiveButton;
+  return (
+    <Slot
+      label={archive.isDownloading ? labels.downloadingFiles : labels.downloadAllFiles}
+      isDownloading={archive.isDownloading}
+      buttonProps={archive.buttonProps}
     />
   );
 }

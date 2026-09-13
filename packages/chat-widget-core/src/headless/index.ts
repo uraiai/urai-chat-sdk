@@ -69,6 +69,7 @@ export {
   isImageFile,
   isScriptableFile,
   shownFileSizes,
+  threadHasFiles,
   workspaceFileName,
 } from "./files";
 
@@ -90,5 +91,6 @@ export type {
   ThreadSummary,
   WidgetAttachment,
   WidgetMessageAttachment,
+  ThreadArchive,
   WorkspaceFile,
 } from "../transport";

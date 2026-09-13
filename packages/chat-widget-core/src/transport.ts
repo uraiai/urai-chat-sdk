@@ -88,6 +88,34 @@ export interface WidgetMessageAttachment {
   description: string | null;
 }
 
+/** A thread's whole workspace, zipped, with the name the server gave it. */
+export interface ThreadArchive {
+  blob: Blob;
+  /** From `Content-Disposition` — named after the thread's title. */
+  fileName: string;
+}
+
+/** Used when the server's name is unreadable (an older chat-service does not expose the header). */
+export const FALLBACK_ARCHIVE_NAME = "conversation-files.zip";
+
+/** The `filename` of a `Content-Disposition` header, if it carries a usable one. */
+export function contentDispositionFileName(header: string | null): string | null {
+  if (!header) return null;
+  const star = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim().replace(/^"|"$/g, "")) || null;
+    } catch {
+      /* fall through to the plain parameter */
+    }
+  }
+  const plain = /filename\s*=\s*("([^"]*)"|[^;]+)/i.exec(header);
+  const name = (plain?.[2] ?? plain?.[1] ?? "").trim();
+  // Only the last segment: a name is never a path on the visitor's disk.
+  const base = name.split(/[\\/]/).pop() ?? "";
+  return base || null;
+}
+
 export interface ThreadSummary {
   id: string;
   title: string;
@@ -288,6 +316,27 @@ export class Transport {
     });
     if (!res.ok) throw new Error(`file fetch failed: ${res.status}`);
     return res.blob();
+  }
+
+  /**
+   * Fetch a thread's whole workspace as one zip — everything in it, not
+   * only the files the transcript shows. Fetched rather than linked for the
+   * same reason as single files: the visitor header is the scope.
+   *
+   * The zip is buffered in memory before the view can save it; the server
+   * streams it, but a `fetch` with a header cannot hand a stream to the
+   * browser's download manager. Throws on 404, which is also what an
+   * empty workspace returns.
+   */
+  async fetchThreadArchive(threadId: string): Promise<ThreadArchive> {
+    const res = await fetch(this.url(`/threads/${threadId}/files.zip`), {
+      headers: { "x-widget-user-id": this.opts.widgetUserId },
+    });
+    if (!res.ok) throw new Error(`archive fetch failed: ${res.status}`);
+    const fileName =
+      contentDispositionFileName(res.headers?.get("content-disposition") ?? null) ??
+      FALLBACK_ARCHIVE_NAME;
+    return { blob: await res.blob(), fileName };
   }
 
   async fetchAttachment(messageId: string, attachmentId: string): Promise<Blob> {

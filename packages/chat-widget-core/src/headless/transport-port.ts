@@ -13,6 +13,7 @@ import type {
   ServerConfig,
   ServerMessage,
   StreamHandlers,
+  ThreadArchive,
   ThreadSummary,
   WidgetAttachment,
 } from "../transport";
@@ -49,6 +50,7 @@ export interface ChatTransport {
   uploadAttachment(file: File): Promise<WidgetAttachment>;
   fetchAttachment(messageId: string, attachmentId: string): Promise<Blob>;
   fetchThreadFile(threadId: string, path: string): Promise<Blob>;
+  fetchThreadArchive(threadId: string): Promise<ThreadArchive>;
 
   /** Returns a teardown function that closes the stream. */
   streamMessage(messageId: string, handlers: StreamHandlers): () => void;

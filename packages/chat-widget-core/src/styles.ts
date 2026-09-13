@@ -108,6 +108,8 @@ export const baseStyles = `
 }
 .ucw-header button:hover { opacity: 1; background: rgba(255,255,255,0.15); }
 .ucw-header button svg { width: 16px; height: 16px; display: block; }
+.ucw-header button[hidden] { display: none; }
+.ucw-header .ucw-archive[data-state="downloading"] { opacity: 0.5; cursor: progress; }
 
 .ucw-body {
   flex: 1;

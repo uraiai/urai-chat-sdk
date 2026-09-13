@@ -44,6 +44,8 @@ export interface UraiChatLabels {
   /** Accessible name for the group of files an assistant turn produced. */
   files: string;
   openImage(fileName: string): string;
+  downloadAllFiles: string;
+  downloadingFiles: string;
 
   footerText: string;
   disclaimer: string;
@@ -114,6 +116,8 @@ export const DEFAULT_LABELS: UraiChatLabels = {
   downloadAttachment: (f) => `Download ${f}`,
   files: "Files",
   openImage: (f) => `Open ${f}`,
+  downloadAllFiles: "Download all files",
+  downloadingFiles: "Preparing download…",
 
   footerText: "",
   disclaimer: "",

@@ -16,7 +16,7 @@
  *    so a memoized message row cannot re-render per token.
  */
 import type { ResolvedConfig } from "../config";
-import type { WidgetAttachment } from "../transport";
+import type { ThreadArchive, WidgetAttachment } from "../transport";
 import type { WidgetEvent } from "../events";
 import { createReasoning } from "./reasoning";
 import { createToolActivity } from "./tool-activity";
@@ -83,6 +83,13 @@ export interface ChatActions {
    * file in a tab (see `isScriptableFile`).
    */
   fetchFileBlob(path: string): Promise<Blob | null>;
+  /**
+   * Fetch the current thread's whole workspace as a zip, for the view to
+   * save (`saveBlob` from the core entry). `null` when there is no thread,
+   * a download is already running, or it failed — a failure also leaves an
+   * error row, since nothing else would tell the visitor.
+   */
+  downloadArchive(): Promise<ThreadArchive | null>;
   setUser(id: string, vars?: WidgetVars | null): void;
   setVars(vars: WidgetVars | null): void;
   /**
@@ -140,6 +147,7 @@ function initialState(deps: ChatStoreDeps): ChatState {
     attachments: [],
     status: "idle",
     threads: { items: null, query: "", loading: false },
+    archive: "idle",
     error: null,
   };
 }
@@ -570,6 +578,9 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       if (state.stream || state.status !== "idle") {
         set({ stream: null, status: "idle" });
       }
+      // Same for a zip fetch: its continuation now bails, so nothing else
+      // would clear the busy state.
+      if (state.archive !== "idle") set({ archive: "idle" });
     },
 
     setDraft(text) {
@@ -607,6 +618,27 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         return await deps.transport.fetchThreadFile(threadId, path);
       } catch (e) {
         console.warn("[UraiChat] file fetch failed:", e);
+        return null;
+      }
+    },
+
+    async downloadArchive() {
+      const threadId = state.threadId;
+      if (!deps.transport || !threadId || state.archive === "downloading") {
+        return null;
+      }
+      const g = gen;
+      set({ archive: "downloading" });
+      try {
+        const archive = await deps.transport.fetchThreadArchive(threadId);
+        if (g !== gen) return null;
+        set({ archive: "idle" });
+        return archive;
+      } catch (e) {
+        if (g !== gen) return null;
+        console.warn("[UraiChat] archive download failed:", e);
+        set({ archive: "idle" });
+        pushError("Could not download the files");
         return null;
       }
     },

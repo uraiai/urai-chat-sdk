@@ -34,7 +34,18 @@ export interface HeaderSlotProps {
   logoUrl: string | null;
   logo: ReactNode | null;
   threadTrigger: ReactNode;
+  /**
+   * "Download all files" as a zip, pre-rendered by the `ArchiveButton`
+   * slot. `null` until the conversation has shown a file.
+   */
+  archiveButton: ReactNode | null;
   titleId: string;
+}
+
+export interface ArchiveButtonSlotProps {
+  label: string;
+  isDownloading: boolean;
+  buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
 export interface MessageSlotProps {
@@ -174,6 +185,7 @@ export interface FallbackSlotProps {
 
 export interface UraiChatComponents {
   Header: ComponentType<HeaderSlotProps>;
+  ArchiveButton: ComponentType<ArchiveButtonSlotProps>;
   UserMessage: ComponentType<MessageSlotProps>;
   AssistantMessage: ComponentType<MessageSlotProps>;
   ErrorMessage: ComponentType<MessageSlotProps>;

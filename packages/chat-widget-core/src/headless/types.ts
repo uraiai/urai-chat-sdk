@@ -134,6 +134,12 @@ export interface ChatState {
   status: ChatStatus;
 
   threads: ThreadListState;
+  /**
+   * Whether the thread's zip is being fetched. The fetch buffers the whole
+   * workspace before anything can be saved, so a view needs a busy state
+   * for the seconds that can take.
+   */
+  archive: "idle" | "downloading";
   /** Last error surfaced to the view, if it was not turned into a message. */
   error: string | null;
 }

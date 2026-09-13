@@ -22,6 +22,7 @@ export interface UraiChatClassNames {
   brandLogo?: ClassValue;
   title?: ClassValue;
   threadTrigger?: StatefulClass<{ isOpen: boolean }>;
+  archiveButton?: StatefulClass<{ isDownloading: boolean }>;
   threadSwitcher?: ClassValue;
   threadSearchInput?: ClassValue;
   newConversationButton?: ClassValue;

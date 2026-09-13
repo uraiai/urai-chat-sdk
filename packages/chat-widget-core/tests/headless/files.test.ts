@@ -4,6 +4,7 @@ import {
   isImageFile,
   isScriptableFile,
   shownFileSizes,
+  threadHasFiles,
   workspaceFileName,
 } from "../../src/headless/files";
 import type { ChatMessage } from "../../src/headless/types";
@@ -52,5 +53,19 @@ describe("workspace files", () => {
       assistant("m2", [{ path: "/out/chart.svg", bytes: 120 }]),
     ]);
     expect(shown.get("/out/chart.svg")).toBe(120);
+  });
+
+  it("offers the zip once a message or the live turn has shown a file", () => {
+    expect(threadHasFiles([assistant("m1", [])])).toBe(false);
+    expect(threadHasFiles([assistant("m1", [{ path: "/out/a", bytes: 1 }])])).toBe(true);
+    const stream = {
+      messageId: "a1",
+      content: "",
+      reasoning: null,
+      tool: null,
+      attached: true,
+      files: [{ path: "/out/a", bytes: 1 }],
+    };
+    expect(threadHasFiles([], stream)).toBe(true);
   });
 });

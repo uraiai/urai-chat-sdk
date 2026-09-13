@@ -781,3 +781,38 @@ describe("store: workspace files", () => {
     });
   });
 });
+
+describe("store: thread archive", () => {
+  it("does nothing without a thread", async () => {
+    const { store, transport } = makeStore();
+    expect(await store.actions.downloadArchive()).toBeNull();
+    expect(transport.callNames()).not.toContain("fetchThreadArchive");
+  });
+
+  it("fetches the current thread's zip, busy while it runs", async () => {
+    const { store, transport } = makeStore();
+    await store.actions.send("hello");
+    const pending = store.actions.downloadArchive();
+    expect(store.getState().archive).toBe("downloading");
+    // A second click while one runs is ignored.
+    expect(await store.actions.downloadArchive()).toBeNull();
+    const archive = await pending;
+    expect(archive?.fileName).toBe("t1.zip");
+    expect(store.getState().archive).toBe("idle");
+    expect(transport.callNames().filter((n) => n === "fetchThreadArchive")).toHaveLength(1);
+  });
+
+  it("leaves an error row when the download fails", async () => {
+    const transport = makeFakeTransport({
+      fail: { fetchThreadArchive: new Error("boom") },
+    });
+    const { store } = makeStore({ transport });
+    await store.actions.send("hello");
+    expect(await store.actions.downloadArchive()).toBeNull();
+    expect(store.getState().archive).toBe("idle");
+    expect(store.getState().messages.at(-1)).toMatchObject({
+      role: "error",
+      content: "Could not download the files",
+    });
+  });
+});

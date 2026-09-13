@@ -141,3 +141,49 @@ describe("Transport.fetchThreadFile", () => {
     );
   });
 });
+
+describe("Transport.fetchThreadArchive", () => {
+  const route = `GET /api/widget/v1/${TOKEN}/threads/t1/files.zip`;
+
+  it("returns the zip under the server's name, with the visitor header", async () => {
+    const blob = new Blob(["PK"], { type: "application/zip" });
+    const { calls } = installFakeFetch({
+      [route]: () =>
+        respond({
+          blob,
+          headers: { "content-disposition": 'attachment; filename="q3-sales.zip"' },
+        }),
+    });
+    const got = await makeTransport().fetchThreadArchive("t1");
+    expect(got.fileName).toBe("q3-sales.zip");
+    expect(await got.blob.text()).toBe("PK");
+    const headers = calls[0].init?.headers as Record<string, string>;
+    expect(headers["x-widget-user-id"]).toBe("visitor-1");
+  });
+
+  // An older chat-service does not expose Content-Disposition cross-origin.
+  it("falls back to a generic name when the header is unreadable", async () => {
+    installFakeFetch({ [route]: () => respond({ blob: new Blob(["PK"]) }) });
+    const got = await makeTransport().fetchThreadArchive("t1");
+    expect(got.fileName).toBe("conversation-files.zip");
+  });
+
+  it("throws on 404, which is also an empty workspace", async () => {
+    installFakeFetch({ [route]: () => respond({ status: 404 }) });
+    await expect(makeTransport().fetchThreadArchive("t1")).rejects.toThrow(
+      "archive fetch failed: 404",
+    );
+  });
+});
+
+describe("contentDispositionFileName", () => {
+  it("reads quoted, bare and RFC 5987 names, never a path", async () => {
+    const { contentDispositionFileName: parse } = await import("../src/transport");
+    expect(parse('attachment; filename="a b.zip"')).toBe("a b.zip");
+    expect(parse("attachment; filename=plain.zip")).toBe("plain.zip");
+    expect(parse("attachment; filename*=UTF-8''caf%C3%A9.zip")).toBe("café.zip");
+    expect(parse('attachment; filename="../../etc/evil.zip"')).toBe("evil.zip");
+    expect(parse("attachment")).toBeNull();
+    expect(parse(null)).toBeNull();
+  });
+});

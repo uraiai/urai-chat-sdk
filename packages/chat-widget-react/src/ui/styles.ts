@@ -84,6 +84,14 @@ ${w(".urai-thread-trigger")} {
 }
 ${w(".urai-thread-trigger:hover")} { background: var(--urai-color-hover-on-primary); }
 ${w(".urai-thread-trigger svg")} { width: 16px; height: 16px; }
+${w(".urai-archive-button")} {
+  background: none; border: 0; color: inherit; cursor: pointer;
+  padding: var(--urai-space-2); border-radius: var(--urai-radius-xs);
+  display: inline-flex;
+}
+${w(".urai-archive-button:hover")} { background: var(--urai-color-hover-on-primary); }
+${w(".urai-archive-button[data-state=\"downloading\"]")} { opacity: 0.5; cursor: progress; }
+${w(".urai-archive-button svg")} { width: 16px; height: 16px; }
 
 ${w(".urai-viewport-wrap")} { position: relative; flex: 1; min-height: 0; display: flex; }
 ${w(".urai-viewport")} { flex: 1; min-height: 0; overflow-y: auto; padding: var(--urai-space-6); }

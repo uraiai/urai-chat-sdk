@@ -13,6 +13,7 @@ import type {
   WorkspaceFile,
 } from "./transport";
 import { clearThread, loadThread, saveThread } from "./session";
+import { saveBlob } from "./download";
 import type { WidgetEvent } from "./events";
 import { applyTheme } from "./theme";
 import { baseStyles } from "./styles";
@@ -242,6 +243,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
   let suggestedContainer: HTMLDivElement | null = null;
   let openButton: HTMLButtonElement | null = null;
   let threadTrigger: HTMLButtonElement | null = null;
+  let archiveBtn: HTMLButtonElement | null = null;
+  let archiveDownloading = false;
   let dropdownEl: HTMLDivElement | null = null;
   let panelBodyArea: HTMLDivElement | null = null;
   let isDropdownOpen = false;
@@ -341,6 +344,21 @@ export function mountWidget(args: MountArgs): MountedWidget {
     threadTrigger.addEventListener("click", () => toggleDropdown());
     header.appendChild(threadTrigger);
 
+    // "Download everything" is thread-level, so it lives in the header —
+    // the same place the app puts it — and appears once the transcript has
+    // shown a file. Preview mode has no thread to zip.
+    if (!previewMode) {
+      archiveBtn = document.createElement("button");
+      archiveBtn.type = "button";
+      archiveBtn.className = "ucw-archive";
+      archiveBtn.title = "Download all files";
+      archiveBtn.setAttribute("aria-label", "Download all files");
+      archiveBtn.innerHTML = ICONS.download;
+      archiveBtn.addEventListener("click", () => void downloadArchive());
+      header.appendChild(archiveBtn);
+      syncArchiveButton();
+    }
+
     if (config.layout.mode === "floating") {
       const closeBtn = document.createElement("button");
       closeBtn.type = "button";
@@ -351,6 +369,41 @@ export function mountWidget(args: MountArgs): MountedWidget {
       header.appendChild(closeBtn);
     }
     return header;
+  }
+
+  /** Show the zip button once the transcript has shown a file. */
+  function syncArchiveButton(liveTurnHasFiles = false) {
+    if (!archiveBtn) return;
+    archiveBtn.hidden = !state.threadId || (shownFileSizes.size === 0 && !liveTurnHasFiles);
+  }
+
+  /**
+   * Fetch the thread's zip and save it. Fetched, not linked: the visitor
+   * header is what scopes the read. Buffered whole before the save, so the
+   * button reports busy until then.
+   */
+  async function downloadArchive() {
+    const threadId = state.threadId;
+    if (!transport || !threadId || archiveDownloading || !archiveBtn) return;
+    const btn = archiveBtn;
+    archiveDownloading = true;
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+    btn.dataset.state = "downloading";
+    try {
+      const archive = await transport.fetchThreadArchive(threadId);
+      if (destroyed) return;
+      saveBlob(archive.blob, archive.fileName);
+    } catch (e) {
+      if (destroyed) return;
+      console.warn("[UraiChat] archive download failed:", e);
+      appendError("Could not download the files");
+    } finally {
+      archiveDownloading = false;
+      btn.disabled = false;
+      btn.removeAttribute("aria-busy");
+      delete btn.dataset.state;
+    }
   }
 
   // ---- Thread switcher dropdown ---------------------------------------
@@ -490,6 +543,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
     }
     body.innerHTML = "";
     clearSuggested();
+    shownFileSizes.clear();
+    syncArchiveButton();
     try {
       const msgs = await transport.listMessages(id);
       if (destroyed) return;
@@ -1130,6 +1185,11 @@ export function mountWidget(args: MountArgs): MountedWidget {
   function renderHistory(messages: ServerMessage[]) {
     // Every caller has just emptied the transcript.
     shownFileSizes.clear();
+    renderHistoryMessages(messages);
+    syncArchiveButton();
+  }
+
+  function renderHistoryMessages(messages: ServerMessage[]) {
     for (const m of messages) {
       if (m.role === "user") {
         const atts: RenderableAttachment[] = (m.attachments ?? []).map((a) => ({
@@ -1271,7 +1331,9 @@ export function mountWidget(args: MountArgs): MountedWidget {
           // Each listing is the whole workspace: it replaces the row.
           if (listing) {
             onFirstSignal();
-            files.set(freshFiles(listing, shownFileSizes));
+            const fresh = freshFiles(listing, shownFileSizes);
+            files.set(fresh);
+            if (fresh.length > 0) syncArchiveButton(true);
           }
         },
         onToolCallSummary({ id, summary }) {
@@ -1420,6 +1482,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     clearPendingAttachments();
     revokeAttachmentObjectUrls();
     shownFileSizes.clear();
+    syncArchiveButton();
     if (body) {
       body.innerHTML = "";
       renderWelcome();
@@ -1445,6 +1508,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
       clearPendingAttachments();
       revokeAttachmentObjectUrls();
       shownFileSizes.clear();
+      syncArchiveButton();
       if (body) {
         body.innerHTML = "";
         renderWelcome();

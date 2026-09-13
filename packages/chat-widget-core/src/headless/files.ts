@@ -7,7 +7,7 @@
  * render as pictures.
  */
 import type { WorkspaceFile } from "../transport";
-import type { ChatMessage } from "./types";
+import type { ChatMessage, StreamSlice } from "./types";
 
 /** Last path segment: `/out/report.xlsx` → `report.xlsx`. */
 export function workspaceFileName(path: string): string {
@@ -31,6 +31,21 @@ export function isImageFile(path: string): boolean {
  */
 export function isScriptableFile(path: string): boolean {
   return /\.(svg|html?|xhtml|xml)$/i.test(path);
+}
+
+/**
+ * Whether to offer the thread's files as a zip: once the transcript shows
+ * at least one. The zip holds more than that — uploads, scratch files and
+ * canvas apps too — but a conversation that has shown the visitor no file
+ * has nothing they would think to download.
+ */
+export function threadHasFiles(
+  messages: ChatMessage[],
+  stream?: StreamSlice | null,
+): boolean {
+  return (
+    !!stream?.files.length || messages.some((m) => (m.files?.length ?? 0) > 0)
+  );
 }
 
 /**

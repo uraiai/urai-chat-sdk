@@ -23,6 +23,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -125,5 +126,28 @@ describe("React view — workspace files", () => {
     });
     await frame();
     expect(container.querySelector('[data-urai-part="file-list"]')).toBeNull();
+  });
+
+  it("offers the zip in the header once a file is shown, and saves it", async () => {
+    const clicked: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicked.push(this.download);
+    });
+    const transport = makeFakeTransport();
+    const { h } = await startTurn(transport);
+    expect(screen.queryByRole("button", { name: "Download all files" })).toBeNull();
+
+    await act(async () => {
+      h.onToolCallCompleted?.({ id: "c1", ok: true, files: [LISTING[0]] });
+    });
+    await frame();
+    const button = await screen.findByRole("button", { name: "Download all files" });
+
+    await userEvent.click(button);
+    await waitFor(() => expect(clicked).toContain("t1.zip"));
+    expect(transport.calls.find((c) => c.method === "fetchThreadArchive")?.args).toEqual(["t1"]);
+    expect(button.hasAttribute("disabled")).toBe(false);
   });
 });

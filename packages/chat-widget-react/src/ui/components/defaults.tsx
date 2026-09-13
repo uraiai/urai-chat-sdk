@@ -8,6 +8,7 @@ import { Markdown } from "../markdown";
 import { AttachmentPreview } from "./attachments";
 import { WorkspaceFilePreview } from "./files";
 import type {
+  ArchiveButtonSlotProps,
   AttachButtonSlotProps,
   AttachmentListSlotProps,
   ComposerSlotProps,
@@ -61,6 +62,7 @@ export function DefaultHeader(props: HeaderSlotProps) {
       <span className={cls("title", "urai-title")} id={props.titleId}>
         {props.title}
       </span>
+      {props.archiveButton}
       {props.threadTrigger}
     </header>
   );
@@ -379,6 +381,24 @@ export function DefaultSendButton(props: SendButtonSlotProps) {
   );
 }
 
+export function DefaultArchiveButton(props: ArchiveButtonSlotProps) {
+  const cls = useCls();
+  const Icon = useIcons().download;
+  return (
+    <button
+      {...props.buttonProps}
+      className={cx(
+        cls("archiveButton", "urai-archive-button", { isDownloading: props.isDownloading }),
+        "urai-focusable",
+      )}
+      data-urai-part="archive-button"
+      data-state={props.isDownloading ? "downloading" : "idle"}
+    >
+      <Icon />
+    </button>
+  );
+}
+
 export function DefaultAttachButton(props: AttachButtonSlotProps) {
   const cls = useCls();
   const Icon = useIcons().paperclip;
@@ -480,6 +500,7 @@ export function DefaultFallback(props: FallbackSlotProps) {
 
 export const defaultComponents: UraiChatComponents = {
   Header: DefaultHeader,
+  ArchiveButton: DefaultArchiveButton,
   UserMessage: DefaultUserMessage,
   AssistantMessage: DefaultAssistantMessage,
   ErrorMessage: DefaultErrorMessage,

@@ -175,4 +175,49 @@ describe("widget: workspace files", () => {
     expect(rows[1].children).toHaveLength(1);
     expect(rows[1].querySelector("img")?.alt).toBe("chart.svg");
   });
+
+  it("offers the zip in the header once a file is shown, and saves it", async () => {
+    const { calls } = installFakeFetch(
+      routes({
+        [`GET ${API}/threads/t1/files.zip`]: () =>
+          respond({
+            blob: new Blob(["PK"], { type: "application/zip" }),
+            headers: { "content-disposition": 'attachment; filename="chart-talk.zip"' },
+          }),
+      }),
+    );
+    const clicked: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicked.push(this.download);
+    });
+
+    const w = await mountWidget();
+    const button = shadow!.querySelector<HTMLButtonElement>(".ucw-archive")!;
+    expect(button.hidden).toBe(true);
+
+    w.sendMessage("chart it");
+    await flushAsync();
+    FakeEventSource.last()!.dispatch(
+      "tool_call_completed",
+      JSON.stringify({ id: "c1", ok: true, files: [{ path: "/out/chart.svg", bytes: 120 }] }),
+    );
+    await flushAsync();
+    expect(button.hidden).toBe(false);
+
+    button.click();
+    await flushAsync();
+    await flushAsync();
+    const zipCall = calls.find((c) => c.pathname.endsWith("/files.zip"))!;
+    expect((zipCall.init?.headers as Record<string, string>)["x-widget-user-id"]).toBe(
+      "visitor-1",
+    );
+    expect(clicked).toContain("chart-talk.zip");
+    expect(button.disabled).toBe(false);
+
+    // A new conversation hides it again.
+    w.startConversation();
+    expect(button.hidden).toBe(true);
+  });
 });

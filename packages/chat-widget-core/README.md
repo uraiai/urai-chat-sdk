@@ -150,7 +150,8 @@ own copy.
 - The widget renders into a closed shadow root; host-page CSS cannot leak in.
 - Files the assistant writes to the conversation's workspace (charts, CSVs,
   reports) show on the reply that made them — images inline, SVG included,
-  anything else as a download. They are fetched with the visitor header, so
+  anything else as a download — and the header offers the whole workspace
+  as one zip once a file has been shown. They are fetched with the visitor header, so
   they need a chat-service with the thread filesystem enabled and the
   `files` field on widget messages.
 - Multiple instances per page are supported. Two instances with the same

@@ -131,6 +131,11 @@ export function makeFakeTransport(
       return new Blob(["fake"]);
     },
 
+    async fetchThreadArchive(threadId) {
+      record("fetchThreadArchive", threadId);
+      return { blob: new Blob(["zip"]), fileName: `${threadId}.zip` };
+    },
+
     streamMessage(messageId, h) {
       record("streamMessage", messageId);
       handlers = h;

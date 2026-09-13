@@ -22,7 +22,9 @@ import type {
 import {
   filterThreads,
   groupByRecency,
+  threadHasFiles,
 } from "@uraiai/chat-widget-core/headless";
+import { saveBlob } from "@uraiai/chat-widget-core";
 import {
   shallowEqual,
   useChatActions,
@@ -258,6 +260,50 @@ export function useAttachments(): UseAttachmentsResult {
 export interface ThreadGroupView {
   label: string;
   threads: ThreadSummary[];
+}
+
+export interface UseThreadArchiveResult {
+  /** True once the conversation has shown the visitor at least one file. */
+  available: boolean;
+  isDownloading: boolean;
+  /** Fetch the whole workspace as a zip and save it. */
+  download(): Promise<void>;
+  buttonProps: ButtonHTMLAttributes<HTMLButtonElement>;
+}
+
+/**
+ * Download the conversation's files as one zip.
+ *
+ * Fetched through the store — the visitor header is the only thing
+ * scoping the read — then handed to the browser's download manager under
+ * the name the server gave it. A failure leaves an error row.
+ */
+export function useThreadArchive(): UseThreadArchiveResult {
+  const actions = useChatActions();
+  const labels = useLabels();
+  const available = useChatSelector(
+    (s) => !!s.threadId && threadHasFiles(s.messages, s.stream),
+  );
+  const isDownloading = useChatSelector((s) => s.archive === "downloading");
+
+  const download = useCallback(async () => {
+    const archive = await actions.downloadArchive();
+    if (archive) saveBlob(archive.blob, archive.fileName);
+  }, [actions]);
+
+  return {
+    available,
+    isDownloading,
+    download,
+    buttonProps: {
+      type: "button",
+      "aria-label": isDownloading ? labels.downloadingFiles : labels.downloadAllFiles,
+      title: isDownloading ? labels.downloadingFiles : labels.downloadAllFiles,
+      "aria-busy": isDownloading || undefined,
+      disabled: isDownloading,
+      onClick: () => void download(),
+    },
+  };
 }
 
 export interface UseThreadsResult {
