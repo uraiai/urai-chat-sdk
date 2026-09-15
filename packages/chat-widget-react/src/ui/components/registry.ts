@@ -153,6 +153,11 @@ export interface AttachmentListSlotProps {
  * Files the assistant wrote to the thread's workspace — charts, CSVs,
  * reports. Never empty when rendered. Fetch bytes with
  * `useChatActions().fetchFileBlob(path)`; there is no URL to use.
+ *
+ * A file can be rewritten at the same size mid-turn, so key anything
+ * cached per file (a fetched blob, a React `key`) by `path` plus
+ * `fileVersion(file)` from `@uraiai/chat-widget-core/headless`, never by
+ * `bytes`.
  */
 export interface FileListSlotProps {
   files: WorkspaceFile[];

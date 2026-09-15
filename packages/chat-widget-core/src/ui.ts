@@ -21,6 +21,7 @@ import { baseStyles } from "./styles";
 import { createToolActivity } from "./headless/tool-activity";
 import { createReasoning } from "./headless/reasoning";
 import {
+  fileVersion,
   freshFiles,
   isImageFile,
   isScriptableFile,
@@ -254,11 +255,17 @@ export function mountWidget(args: MountArgs): MountedWidget {
   /** ObjectURLs we minted for inline attachment previews; revoked on reset/destroy. */
   const attachmentObjectUrls: string[] = [];
   /**
-   * The size each workspace path had where the transcript last showed it.
-   * A live turn shows only files new to this map or changed in size — the
-   * rule the server applies to history. Cleared whenever the transcript is.
+   * The version (`fileVersion`) of each workspace path the transcript
+   * shows. A live turn shows only files new to this map or rewritten since.
+   * Cleared whenever the transcript is.
    */
-  const shownFileSizes = new Map<string, number>();
+  const shownFileVersions = new Map<string, string>();
+  /**
+   * Every file row in the transcript, so a committed turn can take the
+   * files it rewrote off earlier messages — history lists a file only
+   * under the turn that wrote it last. Cleared with the transcript.
+   */
+  const fileLists: ReturnType<typeof makeFileList>[] = [];
 
   function applyLayoutAttrs() {
     root.dataset.mode = config.layout.mode;
@@ -374,7 +381,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
   /** Show the zip button once the transcript has shown a file. */
   function syncArchiveButton(liveTurnHasFiles = false) {
     if (!archiveBtn) return;
-    archiveBtn.hidden = !state.threadId || (shownFileSizes.size === 0 && !liveTurnHasFiles);
+    archiveBtn.hidden = !state.threadId || (shownFileVersions.size === 0 && !liveTurnHasFiles);
   }
 
   /**
@@ -543,7 +550,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
     }
     body.innerHTML = "";
     clearSuggested();
-    shownFileSizes.clear();
+    shownFileVersions.clear();
+    fileLists.length = 0;
     syncArchiveButton();
     try {
       const msgs = await transport.listMessages(id);
@@ -925,7 +933,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
           bubble.appendChild(row);
         }
         const next = files.map((f) => {
-          const key = `${f.path}@${f.bytes}`;
+          const key = `${f.path}@${fileVersion(f)}`;
           const el = items.get(key) ?? buildFileItem(threadId, f);
           items.set(key, el);
           return el;
@@ -1184,7 +1192,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
 
   function renderHistory(messages: ServerMessage[]) {
     // Every caller has just emptied the transcript.
-    shownFileSizes.clear();
+    shownFileVersions.clear();
+    fileLists.length = 0;
     renderHistoryMessages(messages);
     syncArchiveButton();
   }
@@ -1207,8 +1216,10 @@ export function mountWidget(args: MountArgs): MountedWidget {
           m.tool_call_summaries ?? undefined,
         );
         if (m.files?.length) {
-          makeFileList(bubble, m.thread_id).set(m.files);
-          for (const f of m.files) shownFileSizes.set(f.path, f.bytes);
+          const list = makeFileList(bubble, m.thread_id);
+          list.set(m.files);
+          fileLists.push(list);
+          for (const f of m.files) shownFileVersions.set(f.path, fileVersion(f));
         }
         // Prepend the collapsed reasoning disclosure if the model
         // produced a thought summary on this turn. Same shape as the
@@ -1331,7 +1342,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
           // Each listing is the whole workspace: it replaces the row.
           if (listing) {
             onFirstSignal();
-            const fresh = freshFiles(listing, shownFileSizes);
+            const fresh = freshFiles(listing, shownFileVersions);
             files.set(fresh);
             if (fresh.length > 0) syncArchiveButton(true);
           }
@@ -1356,7 +1367,17 @@ export function mountWidget(args: MountArgs): MountedWidget {
           // Race guard: reasoning-only turns still need a visible bubble.
           onFirstSignal();
           tools.clear();
-          for (const f of files.files) shownFileSizes.set(f.path, f.bytes);
+          // What this turn rewrote moves here from earlier messages.
+          const moved = new Set(files.files.map((f) => f.path));
+          if (moved.size > 0) {
+            for (const list of fileLists) {
+              if (list.files.some((f) => moved.has(f.path))) {
+                list.set(list.files.filter((f) => !moved.has(f.path)));
+              }
+            }
+            fileLists.push(files);
+          }
+          for (const f of files.files) shownFileVersions.set(f.path, fileVersion(f));
           emit({ type: "assistant-reply", content: buf });
           setSending(false);
         },
@@ -1481,7 +1502,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
     }
     clearPendingAttachments();
     revokeAttachmentObjectUrls();
-    shownFileSizes.clear();
+    shownFileVersions.clear();
+    fileLists.length = 0;
     syncArchiveButton();
     if (body) {
       body.innerHTML = "";
@@ -1507,7 +1529,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
       state.forceNewOnNextCreate = false;
       clearPendingAttachments();
       revokeAttachmentObjectUrls();
-      shownFileSizes.clear();
+      shownFileVersions.clear();
+      fileLists.length = 0;
       syncArchiveButton();
       if (body) {
         body.innerHTML = "";

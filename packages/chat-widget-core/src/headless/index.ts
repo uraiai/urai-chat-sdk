@@ -65,11 +65,13 @@ export {
 export { hydrateHistory, commitStream } from "./messages";
 
 export {
+  fileVersion,
   freshFiles,
   isImageFile,
   isScriptableFile,
-  shownFileSizes,
+  shownFileVersions,
   threadHasFiles,
+  withoutFiles,
   workspaceFileName,
 } from "./files";
 

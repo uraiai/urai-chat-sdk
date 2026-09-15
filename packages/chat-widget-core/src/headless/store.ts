@@ -21,7 +21,7 @@ import type { WidgetEvent } from "../events";
 import { createReasoning } from "./reasoning";
 import { createToolActivity } from "./tool-activity";
 import { hydrateHistory, commitStream } from "./messages";
-import { freshFiles, shownFileSizes } from "./files";
+import { freshFiles, shownFileVersions, withoutFiles } from "./files";
 import { createNullSessionStore, type SessionStore } from "./persistence";
 import type { ChatTransport } from "./transport-port";
 import type {
@@ -383,7 +383,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         // turn showed before rather than adding to it.
         if (files) {
           attach();
-          patchStream({ files: freshFiles(files, shownFileSizes(state.messages)) });
+          patchStream({ files: freshFiles(files, shownFileVersions(state.messages)) });
         }
       },
       onToolCallSummary({ id, summary }) {
@@ -412,7 +412,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         const content = finished?.content ?? "";
         set({
           messages: finished
-            ? [...state.messages, commitStream(finished)]
+            ? [...withoutFiles(state.messages, finished.files), commitStream(finished)]
             : state.messages,
           stream: null,
           status: "idle",

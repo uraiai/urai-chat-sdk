@@ -44,10 +44,11 @@ export interface ServerMessage {
    */
   tool_call_summaries?: Record<string, string> | null;
   /**
-   * Workspace files this message produced or changed — a chart, a CSV, a
-   * report. The server has already dropped the visitor's own uploads,
-   * scratch files and canvas apps, and repeats a file only on a message
-   * where its size changed. Absent when there are none.
+   * Workspace files this message's turn wrote last — a chart, a CSV, a
+   * report. The server works this out by statting the workspace, so a
+   * file a later turn rewrote is listed on that later message instead.
+   * It has already dropped the visitor's own uploads, scratch files and
+   * canvas apps. Absent when there are none.
    */
   files?: WorkspaceFile[] | null;
 }
@@ -61,6 +62,11 @@ export interface WorkspaceFile {
   /** Absolute workspace path, e.g. `/out/chart.svg`. */
   path: string;
   bytes: number;
+  /**
+   * When the file was last written, RFC 3339. How a live turn tells a
+   * rewrite from a file it already showed. Absent from older servers.
+   */
+  modified_at?: string;
 }
 
 /**
@@ -455,7 +461,8 @@ export interface ToolCallCompletedEvent {
   ok: boolean;
   /**
    * The workspace's visitor-facing files after this call — the **whole**
-   * listing, not just what the call wrote. Absent when there are none.
+   * listing, not just what the call wrote, each with its `modified_at`.
+   * Absent when there are none.
    */
   files?: WorkspaceFile[];
 }

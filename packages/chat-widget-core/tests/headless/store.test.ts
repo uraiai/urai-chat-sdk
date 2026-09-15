@@ -740,15 +740,14 @@ describe("store: workspace files", () => {
     });
     expect(store.getState().stream?.files).toEqual([]);
 
+    // Rewritten at the same size: only the write time tells.
+    const rewritten = { path: "/out/chart.svg", bytes: 100, modified_at: "2026-01-01T00:05:00Z" };
     h.onToolCallCompleted?.({
       id: "c2",
       ok: true,
-      files: [
-        { path: "/out/chart.svg", bytes: 131 },
-        { path: "/out/data.csv", bytes: 9 },
-      ],
+      files: [rewritten, { path: "/out/data.csv", bytes: 9 }],
     });
-    expect(store.getState().stream?.files).toEqual([{ path: "/out/chart.svg", bytes: 131 }]);
+    expect(store.getState().stream?.files).toEqual([rewritten]);
 
     // A call that reports no listing leaves the row alone.
     h.onToolCallCompleted?.({ id: "c3", ok: true });
@@ -756,8 +755,12 @@ describe("store: workspace files", () => {
 
     h.onChunk?.("Done.");
     h.onDone?.();
-    expect(store.getState().messages.at(-1)?.files).toEqual([
-      { path: "/out/chart.svg", bytes: 131 },
+    const messages = store.getState().messages;
+    expect(messages.at(-1)?.files).toEqual([rewritten]);
+    // The chart moved here, as a reload of history would show it.
+    expect(messages.find((m) => m.id === "m1")?.files).toBeUndefined();
+    expect(messages.find((m) => m.id === "m2")?.files).toEqual([
+      { path: "/out/data.csv", bytes: 9 },
     ]);
   });
 

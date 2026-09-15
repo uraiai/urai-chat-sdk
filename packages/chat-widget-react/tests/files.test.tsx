@@ -75,6 +75,29 @@ describe("React view — workspace files", () => {
     );
   });
 
+  it("refetches a file rewritten at the same size", async () => {
+    const transport = makeFakeTransport();
+    const { h } = await startTurn(transport);
+    const chart = { path: "/out/chart.png", bytes: 100, modified_at: "2026-01-01T00:00:01Z" };
+    await act(async () => {
+      h.onToolCallCompleted?.({ id: "c1", ok: true, files: [chart] });
+    });
+    await frame();
+    const fetches = () =>
+      transport.calls.filter((c) => c.method === "fetchThreadFile" && c.args[1] === chart.path).length;
+    await waitFor(() => expect(fetches()).toBe(1));
+
+    await act(async () => {
+      h.onToolCallCompleted?.({
+        id: "c2",
+        ok: true,
+        files: [{ ...chart, modified_at: "2026-01-01T00:00:09Z" }],
+      });
+    });
+    await frame();
+    await waitFor(() => expect(fetches()).toBe(2));
+  });
+
   it("never opens an SVG in a tab — it downloads; a raster opens", async () => {
     const transport = makeFakeTransport();
     const { container, h } = await startTurn(transport);

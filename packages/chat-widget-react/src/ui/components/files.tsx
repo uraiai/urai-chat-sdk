@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import {
+  fileVersion,
   isImageFile,
   isScriptableFile,
   workspaceFileName,
@@ -38,7 +39,9 @@ export function WorkspaceFilePreview({ file }: { file: WorkspaceFile }) {
   const name = workspaceFileName(file.path);
   const scriptable = isScriptableFile(file.path);
 
-  const blob = useBlob(`${file.path}@${file.bytes}`, () =>
+  // Keyed by version, not size: a rewrite at the same byte count is still
+  // new bytes, and a stale key would keep showing the old picture.
+  const blob = useBlob(`${file.path}@${fileVersion(file)}`, () =>
     store.actions.fetchFileBlob?.(file.path) ?? null,
   );
   const viewUrl = useObjectUrl(blob);

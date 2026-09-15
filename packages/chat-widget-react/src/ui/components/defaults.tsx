@@ -6,6 +6,7 @@ import { cx, resolveClass } from "../class-names";
 import { useIcons } from "../hooks";
 import { Markdown } from "../markdown";
 import { AttachmentPreview } from "./attachments";
+import { fileVersion } from "@uraiai/chat-widget-core/headless";
 import { WorkspaceFilePreview } from "./files";
 import type {
   ArchiveButtonSlotProps,
@@ -325,7 +326,7 @@ export function DefaultFileList(props: FileListSlotProps) {
       aria-label={labels.files}
     >
       {props.files.map((f) => (
-        <WorkspaceFilePreview key={`${f.path}@${f.bytes}`} file={f} />
+        <WorkspaceFilePreview key={`${f.path}@${fileVersion(f)}`} file={f} />
       ))}
     </div>
   );
