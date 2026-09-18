@@ -1,5 +1,6 @@
 import {
   createUraiChatWidget,
+  type ComponentRenderers,
   type ConfigOverrides,
   type WidgetBehavior,
   type WidgetController,
@@ -19,6 +20,9 @@ import {
 } from "vue";
 
 export type {
+  ComponentRenderContext,
+  ComponentRenderer,
+  ComponentRenderers,
   ConfigOverrides,
   WidgetBehavior,
   WidgetController,
@@ -58,6 +62,16 @@ export const UraiChatWidget = defineComponent({
     },
     behavior: {
       type: Object as PropType<Partial<WidgetBehavior>>,
+      default: undefined,
+    },
+    /**
+     * Renderers for rich components, by name — a uraiJS tool asks for one
+     * with `sendCommand(thread_id, { command: "displayComponent", component,
+     * props })`. Read when the widget is created. See `ComponentRenderer` in
+     * `@uraiai/chat-widget-core`.
+     */
+    displayComponents: {
+      type: Object as PropType<ComponentRenderers>,
       default: undefined,
     },
     /**
@@ -121,6 +135,7 @@ export const UraiChatWidget = defineComponent({
         theme: props.theme,
         layout: props.layout,
         behavior: props.behavior,
+        displayComponents: props.displayComponents,
         container,
       });
       controller.value = c;

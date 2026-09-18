@@ -14,7 +14,10 @@ import type {
   ChatState,
   ChatStore,
 } from "@uraiai/chat-widget-core/headless";
-import type { UraiChatComponents } from "./components/registry";
+import type {
+  UraiChatComponents,
+  UraiChatDisplayComponents,
+} from "./components/registry";
 import type { UraiChatIcons } from "./icons";
 import type { UraiChatLabels } from "./labels";
 import type { UraiChatClassNames } from "./class-names";
@@ -35,6 +38,8 @@ const ChatStoreContext = createContext<ChatStoreContextValue | null>(null);
 
 export interface PresentationContextValue {
   components: UraiChatComponents;
+  /** What tools' `displayComponent` commands render with, by name. */
+  displayComponents: UraiChatDisplayComponents;
   classNames: UraiChatClassNames;
   labels: UraiChatLabels;
   icons: UraiChatIcons;

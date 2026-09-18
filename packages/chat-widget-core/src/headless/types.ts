@@ -3,6 +3,7 @@
  */
 import type { ResolvedConfig } from "../config";
 import type {
+  MessageComponent,
   ThreadSummary,
   WidgetAttachment,
   WidgetMessageAttachment,
@@ -50,6 +51,12 @@ export interface ChatMessage {
    * `actions.fetchFileBlob` — never a URL, see `ChatActions`.
    */
   files?: WorkspaceFile[];
+  /**
+   * Components a tool asked this turn to display, in arrival order. Render
+   * them below the reply text with whatever the host registered under
+   * `component`; skip a name nothing is registered for.
+   */
+  components?: MessageComponent[];
 }
 
 /**
@@ -90,6 +97,8 @@ export interface StreamSlice {
    * appended to — on every tool call that reports a listing.
    */
   files: WorkspaceFile[];
+  /** Components a tool has asked this turn to display so far. Append-only. */
+  components: MessageComponent[];
   /**
    * False until the first real model output. Views show a "thinking"
    * placeholder instead of an empty bubble while this is false.

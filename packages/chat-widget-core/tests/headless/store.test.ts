@@ -329,6 +329,61 @@ describe("store: streaming", () => {
   });
 });
 
+describe("store: display components", () => {
+  const ORDER = {
+    command: "displayComponent",
+    component: "OrderCard",
+    props: { orderId: "o-1" },
+  };
+
+  it("collects components on the live turn and commits them in order", async () => {
+    const { store, transport, events } = makeStore();
+    await store.actions.send("where is my order?");
+    const h = stream(transport);
+
+    h.onCommand?.(ORDER);
+    expect(store.getState().stream).toMatchObject({
+      attached: true,
+      components: [{ component: "OrderCard", props: { orderId: "o-1" } }],
+    });
+    // The host still hears about it, verbatim.
+    expect(events).toContainEqual({ type: "command", command: ORDER });
+
+    h.onChunk?.("Here it is.");
+    h.onCommand?.({ command: "displayComponent", component: "Map" });
+    h.onDone?.();
+
+    const last = store.getState().messages.at(-1)!;
+    expect(last.content).toBe("Here it is.");
+    expect(last.components).toEqual([
+      { component: "OrderCard", props: { orderId: "o-1" } },
+      { component: "Map", props: {} },
+    ]);
+  });
+
+  it("does not render other or malformed commands", async () => {
+    const { store, transport, events } = makeStore();
+    await store.actions.send("hello");
+    const h = stream(transport);
+    h.onCommand?.({ command: "navigate", url: "/pricing" });
+    h.onCommand?.({ command: "displayComponent", component: "<script>" });
+    expect(store.getState().stream?.components).toEqual([]);
+    expect(events.filter((e) => e.type === "command")).toHaveLength(2);
+    h.onDone?.();
+    expect(store.getState().messages.at(-1)!.components).toBeUndefined();
+  });
+
+  it("ignores a component from a superseded turn", async () => {
+    const { store, transport } = makeStore();
+    await store.actions.send("hello");
+    const h = stream(transport);
+    store.actions.newConversation();
+    h.onCommand?.(ORDER);
+    expect(store.getState().stream).toBeNull();
+    expect(store.getState().messages).toEqual([]);
+  });
+});
+
 describe("store: attachments", () => {
   const file = (name = "a.png") => new File(["x"], name, { type: "image/png" });
 
@@ -361,6 +416,22 @@ describe("store: attachments", () => {
     const sent = transport.calls.find((c) => c.method === "sendMessage");
     expect(sent?.args[2]).toEqual([
       { file_name: "a.png", mime_type: "image/png", bucket_path: "uploads/a.png" },
+    ]);
+  });
+
+  it("sends the current vars with every message", async () => {
+    const { store, transport } = makeStore();
+    store.actions.setVars({ session_token: "t1" });
+    await store.actions.send("first");
+    stream(transport).onDone?.();
+    // A refresh right before the next send: the send itself carries it, so
+    // the turn never depends on the fire-and-forget PATCH having landed.
+    store.actions.setVars({ session_token: "t2" });
+    await store.actions.send("second");
+    const sends = transport.calls.filter((c) => c.method === "sendMessage");
+    expect(sends.map((c) => c.args[3])).toEqual([
+      { session_token: "t1" },
+      { session_token: "t2" },
     ]);
   });
 

@@ -101,8 +101,8 @@ export function makeFakeTransport(
       return opts.messages?.[threadId] ?? [];
     },
 
-    async sendMessage(threadId, content, attachments) {
-      record("sendMessage", threadId, content, attachments);
+    async sendMessage(threadId, content, attachments, vars) {
+      record("sendMessage", threadId, content, attachments, vars);
       const n = ++messageSeq;
       return {
         user_message_id: `u${n}`,

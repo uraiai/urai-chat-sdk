@@ -45,6 +45,7 @@ export interface ChatTransport {
     threadId: string,
     content: string,
     attachments?: WidgetAttachment[],
+    vars?: Record<string, unknown> | null,
   ): Promise<SendMessageResult>;
 
   uploadAttachment(file: File): Promise<WidgetAttachment>;

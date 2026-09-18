@@ -36,7 +36,10 @@ import {
 import { cx } from "./class-names";
 import type { UraiChatClassNames } from "./class-names";
 import { defaultComponents } from "./components/defaults";
-import type { UraiChatComponents } from "./components/registry";
+import type {
+  UraiChatComponents,
+  UraiChatDisplayComponents,
+} from "./components/registry";
 import { defaultIcons, type UraiChatIcons } from "./icons";
 import { resolveLabels, type UraiChatLabelsInput } from "./labels";
 import { ensureStyles } from "./styles";
@@ -91,6 +94,14 @@ export interface ChatRootProps {
   fetchServerConfig?: boolean;
 
   components?: Partial<UraiChatComponents>;
+  /**
+   * Rich components, by name. A uraiJS tool asks for one with
+   * `meta.urai.sendCommand(thread_id, { command: "displayComponent",
+   * component: "OrderCard", props })`, and it renders below the reply text —
+   * live, and again from history. Each receives `DisplayComponentProps`. A
+   * name with no entry is not shown.
+   */
+  displayComponents?: UraiChatDisplayComponents;
   classNames?: UraiChatClassNames;
   labels?: UraiChatLabelsInput;
   icons?: Partial<UraiChatIcons>;
@@ -294,6 +305,7 @@ function ChatRoot(props, ref) {
     <ChatStoreProvider store={client.store}>
       <PresentationBridge
         components={components}
+        displayComponents={props.displayComponents ?? NO_DISPLAY_COMPONENTS}
         classNames={props.classNames ?? {}}
         icons={icons}
         labels={props.labels}
@@ -313,9 +325,12 @@ function ChatRoot(props, ref) {
  * Reads config out of the store so labels and theme follow the server
  * layer once it lands, then renders the themed root element.
  */
+const NO_DISPLAY_COMPONENTS: UraiChatDisplayComponents = {};
+
 function PresentationBridge(props: {
   colorScheme?: "light" | "dark" | "system" | "host";
   components: UraiChatComponents;
+  displayComponents: UraiChatDisplayComponents;
   classNames: UraiChatClassNames;
   icons: UraiChatIcons;
   labels?: UraiChatLabelsInput;
@@ -333,13 +348,14 @@ function PresentationBridge(props: {
   const value = useMemo<PresentationContextValue>(
     () => ({
       components: props.components,
+      displayComponents: props.displayComponents,
       classNames: props.classNames,
       labels,
       icons: props.icons,
       unstyled: props.unstyled,
       idPrefix: props.idPrefix,
     }),
-    [props.components, props.classNames, labels, props.icons, props.unstyled, props.idPrefix],
+    [props.components, props.displayComponents, props.classNames, labels, props.icons, props.unstyled, props.idPrefix],
   );
 
   const theme = useMemo(() => themeToStyle(config.theme), [config.theme]);

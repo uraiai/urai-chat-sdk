@@ -34,7 +34,7 @@ const widget = ref<{ controller: WidgetController | null } | null>(null);
 
 Required props: `widgetToken`, `userId`.
 Optional: `baseUrl` (defaults to `https://chat.app.urai.dev`; set it for
-self-hosted deployments), `vars`, `collections`, `theme`, `layout`, `behavior`, `mode`
+self-hosted deployments), `vars`, `collections`, `theme`, `layout`, `behavior`, `displayComponents`, `mode`
 (`"floating"` default | `"inline"`).
 Emits: `ready`, `opened`, `closed`, `user-message`, `assistant-reply`,
 `command`, `error`.
@@ -45,6 +45,30 @@ use it to react to tool-driven UI signals (e.g. navigation). The payload
 is the tool author's JSON, verbatim: treat it as untrusted and validate
 its shape before acting. Delivered only while the turn's stream is open;
 each open widget instance receives its own copy.
+
+`displayComponents` maps component names to renderers, for UI a tool
+asks to show with `sendCommand(thread_id, { command: "displayComponent",
+component, props })`. Each renderer is
+`(element, props, { sendMessage }) => cleanup?`, and `element` is in your
+page's DOM, so your styles apply and you can mount a component into it.
+Components render below the reply text, live and from history. It is read
+when the widget is created. See "Displaying rich components" in
+`@uraiai/chat-widget-core` for the full contract.
+
+```ts
+import { createApp, h } from "vue";
+import type { ComponentRenderers } from "@uraiai/chat-widget-vue";
+import OrderCard from "./OrderCard.vue";
+
+const displayComponents: ComponentRenderers = {
+  OrderCard(element, props, { sendMessage }) {
+    const app = createApp({ render: () => h(OrderCard, { ...props, sendMessage }) });
+    app.mount(element);
+    return () => app.unmount();
+  },
+};
+// <UraiChatWidget widget-token="…" user-id="…" :display-components="displayComponents" />
+```
 
 In inline mode the component renders a `div` and the chat panel fills it —
 size it via the parent element.

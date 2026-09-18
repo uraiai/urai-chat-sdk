@@ -13,7 +13,18 @@ export type {
   WidgetEventListener,
 } from "./events";
 
-export type { StartConversationArg, WidgetVars } from "./ui";
+export type {
+  ComponentRenderContext,
+  ComponentRenderer,
+  ComponentRenderers,
+  StartConversationArg,
+  WidgetVars,
+} from "./ui";
+
+export {
+  DISPLAY_COMPONENT_COMMAND,
+  parseDisplayComponent,
+} from "./headless/components";
 
 export {
   DEFAULT_BEHAVIOR,
@@ -28,6 +39,7 @@ export {
 } from "./config";
 
 export type {
+  MessageComponent,
   ServerMessage,
   ThreadSummary,
   SendMessageResult,

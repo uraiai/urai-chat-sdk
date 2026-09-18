@@ -19,6 +19,7 @@ import {
 } from "./events";
 import {
   mountWidget,
+  type ComponentRenderers,
   type MountedWidget,
   type StartConversationArg,
   type WidgetVars,
@@ -61,6 +62,14 @@ export interface UraiChatWidgetOptions {
   container?: HTMLElement;
   /** Set false to skip the GET /config fetch and use local options only. */
   fetchServerConfig?: boolean;
+  /**
+   * Renderers for rich components, by name. A uraiJS tool asks for one with
+   * `meta.urai.sendCommand(thread_id, { command: "displayComponent",
+   * component: "OrderCard", props })`, and it is drawn below the reply
+   * text — live, and again when the conversation is reloaded. A name with
+   * no renderer here is not shown. See `ComponentRenderer`.
+   */
+  displayComponents?: ComponentRenderers;
 }
 
 export interface WidgetController {
@@ -183,6 +192,7 @@ export function createUraiChatWidget(
       initialVars: options.vars ?? null,
       initialCollections: options.collections ?? null,
       hostElement: host,
+      displayComponents: options.displayComponents,
       emit: (event: WidgetEvent) => emitter.emit(event),
     });
 

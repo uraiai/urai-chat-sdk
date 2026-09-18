@@ -1,12 +1,53 @@
 import { useRef, useState } from "react";
 import {
   UraiChatWidget,
+  type ComponentRenderers,
   type WidgetController,
 } from "@uraiai/chat-widget-react";
 
 const BASE_URL = import.meta.env.VITE_URAI_BASE_URL ?? "http://localhost:4545";
 const WIDGET_TOKEN = import.meta.env.VITE_URAI_WIDGET_TOKEN ?? "";
 const DEFAULT_USER = import.meta.env.VITE_URAI_USER_ID ?? "demo-user-1";
+
+/**
+ * Display components, the imperative way — what the floating widget takes.
+ *
+ * A renderer is handed a plain element and may do anything with it; returning
+ * a function registers cleanup, which runs when the message leaves the
+ * transcript (new conversation, thread switch, user change, destroy). The
+ * element lives in *this page's* DOM and is projected into the widget's closed
+ * shadow root through a slot, so the styles below apply and a framework app
+ * could be mounted into it instead.
+ *
+ * `props` is tool output — built with `textContent` here, never `innerHTML`.
+ */
+const DISPLAY_COMPONENTS: ComponentRenderers = {
+  OrderCard(element, props, { sendMessage }) {
+    const orderId = typeof props.orderId === "string" ? props.orderId : "unknown";
+    const status = typeof props.status === "string" ? props.status : "pending";
+
+    element.style.cssText =
+      "display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid #ddd;border-radius:10px";
+
+    const title = document.createElement("strong");
+    title.textContent = `Order ${orderId} — ${status}`;
+
+    const track = document.createElement("button");
+    track.textContent = "Track this order";
+    track.onclick = () => sendMessage(`Where is order ${orderId}?`);
+
+    element.append(title, track);
+
+    // Proof the lifecycle runs: watch the console when you switch threads.
+    const ticker = setInterval(() => {
+      title.textContent = `Order ${orderId} — ${status} · ${new Date().toLocaleTimeString()}`;
+    }, 1000);
+    return () => {
+      clearInterval(ticker);
+      console.log(`[demo] OrderCard ${orderId} cleaned up`);
+    };
+  },
+};
 
 export function App() {
   const controller = useRef<WidgetController>(null);
@@ -110,6 +151,7 @@ export function App() {
         onClosed={() => addLog("closed")}
         onUserMessage={(c) => addLog(`user-message: ${c}`)}
         onAssistantReply={(c) => addLog(`assistant-reply: ${c.slice(0, 60)}…`)}
+        displayComponents={DISPLAY_COMPONENTS}
         onCommand={(cmd) => addLog(`command: ${JSON.stringify(cmd)}`)}
         onError={(e) => addLog(`error: ${e}`)}
       />

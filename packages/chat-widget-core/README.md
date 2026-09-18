@@ -145,6 +145,62 @@ open (a command fired long after the tool returns may be dropped), and
 every open widget for the conversation (e.g. multiple tabs) receives its
 own copy.
 
+## Displaying rich components
+
+A tool can put UI in the reply — an order card, a map, a confirm button —
+by naming a component and passing props:
+
+```ts
+// In a uraiJS tool
+await meta.urai.sendCommand(meta.vars.thread_id, {
+  command: "displayComponent",
+  component: "OrderCard",
+  props: { orderId: "o-1", status: "shipped" },
+});
+```
+
+The widget never runs code from the tool. It looks the name up in the
+renderers you register and calls that renderer:
+
+```ts
+const widget = createUraiChatWidget({
+  widgetToken: "<widget token>",
+  userId: "user_42",
+  displayComponents: {
+    OrderCard(element, props, { sendMessage }) {
+      // `props` is tool output: check it, and never put it in innerHTML.
+      const id = typeof props.orderId === "string" ? props.orderId : "?";
+      const title = document.createElement("strong");
+      title.textContent = `Order ${id}`;
+      const cancel = document.createElement("button");
+      cancel.textContent = "Cancel order";
+      cancel.onclick = () => sendMessage(`Cancel order ${id}`);
+      element.append(title, cancel);
+      return () => { /* optional cleanup */ };
+    },
+  },
+});
+```
+
+Components render below the reply text, in the order they were sent, both
+while the reply streams in and when the conversation is loaded again from
+history (the server saves them on the message). Names with no renderer are
+skipped with a one-time console warning. A renderer that throws is logged
+and dropped without breaking the reply.
+
+`element` sits in **your page's DOM** and is slotted into the widget's
+shadow root. That means your stylesheets apply to it and you can mount a
+React, Vue or Svelte app into it. Tear that app down in the cleanup
+function, which runs when the message leaves the transcript (new
+conversation, thread switch, `destroy()`).
+
+`component` must start with a letter and contain only letters, digits and
+`_ . : -` (at most 100 characters); `props`, when given, must be an object.
+Anything else is not drawn. The payload is capped at 64 KB like every
+command, and it still reaches `command` listeners either way.
+
+Renderers are read when the widget is created.
+
 ## Notes
 
 - The widget renders into a closed shadow root; host-page CSS cannot leak in.

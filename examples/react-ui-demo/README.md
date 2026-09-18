@@ -56,6 +56,18 @@ transcript without tearing down the widget or re-fetching config.
 - `unstyled` — every default class dropped, styled entirely from
   `app.css`. Note how little CSS that takes.
 
+**Display components.** A uraiJS tool can put host UI inside a reply by
+sending `{ command: "displayComponent", component, props }`. `OrderCard`
+and `BrokenCard` are registered in `App.tsx`; the chat looks the name up
+and renders your component with the tool's props, inside an error
+boundary. Nothing renderable crosses the boundary — a name and a JSON
+object do.
+
+Only a tool can trigger one, so seeing it work needs an agent on the
+other end: `agent/` has a system prompt that does nothing but this, and
+the script the agent ends up writing. Valid commands are stored against
+the message, so the card survives a reload.
+
 **Host dark mode.** The checkbox sets `color-scheme` on `<html>`. The
 chat inherits it with no JS and no prop, because `colorScheme` defaults
 to `"host"` — a chat embedded in someone's product should follow that

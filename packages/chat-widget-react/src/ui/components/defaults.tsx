@@ -8,10 +8,12 @@ import { Markdown } from "../markdown";
 import { AttachmentPreview } from "./attachments";
 import { fileVersion } from "@uraiai/chat-widget-core/headless";
 import { WorkspaceFilePreview } from "./files";
+import { DisplayComponent } from "./display-component";
 import type {
   ArchiveButtonSlotProps,
   AttachButtonSlotProps,
   AttachmentListSlotProps,
+  ComponentListSlotProps,
   ComposerSlotProps,
   EmptyStateSlotProps,
   FallbackSlotProps,
@@ -114,6 +116,7 @@ export function DefaultAssistantMessage(props: MessageSlotProps) {
       <span className="urai-sr-only">{labels.messageRolePrefix("assistant")}</span>
       <div className="urai-bubble">
         {props.content}
+        {props.displayComponents}
         {props.files}
       </div>
       {props.attachments}
@@ -150,6 +153,7 @@ export function DefaultStreamingMessage(props: StreamingMessageSlotProps) {
       {props.toolActivity}
       <div className="urai-bubble">
         {props.content}
+        {props.displayComponents}
         {props.files}
       </div>
     </li>
@@ -327,6 +331,22 @@ export function DefaultFileList(props: FileListSlotProps) {
     >
       {props.files.map((f) => (
         <WorkspaceFilePreview key={`${f.path}@${fileVersion(f)}`} file={f} />
+      ))}
+    </div>
+  );
+}
+
+export function DefaultComponentList(props: ComponentListSlotProps) {
+  const cls = useCls();
+  if (props.components.length === 0) return null;
+  return (
+    <div
+      className={cls("componentList", "urai-components")}
+      data-urai-part="component-list"
+    >
+      {/* Append-only within a turn, so the index is a stable key. */}
+      {props.components.map((c, i) => (
+        <DisplayComponent key={c.id ?? i} item={c} />
       ))}
     </div>
   );
@@ -516,6 +536,7 @@ export const defaultComponents: UraiChatComponents = {
   SuggestedQuestions: DefaultSuggestedQuestions,
   AttachmentList: DefaultAttachmentList,
   FileList: DefaultFileList,
+  ComponentList: DefaultComponentList,
   Composer: DefaultComposer,
   ComposerInput: DefaultComposerInput,
   SendButton: DefaultSendButton,

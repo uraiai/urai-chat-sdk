@@ -111,6 +111,7 @@ export {
   DefaultAssistantMessage,
   DefaultAttachButton,
   DefaultAttachmentList,
+  DefaultComponentList,
   DefaultComposer,
   DefaultComposerInput,
   DefaultEmptyState,
@@ -135,6 +136,7 @@ export {
 } from "./components/defaults";
 
 export type * from "./components/registry";
+export { DisplayComponent } from "./components/display-component";
 
 export { defaultIcons, type UraiChatIcon, type UraiChatIcons } from "./icons";
 export {
@@ -156,6 +158,7 @@ export type {
   ChatMessage as ChatMessageData,
   ChatState,
   ChatStatus,
+  MessageComponent,
   PendingAttachment,
   StreamSlice,
   WorkspaceFile,

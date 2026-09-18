@@ -51,6 +51,26 @@ export interface ServerMessage {
    * canvas apps. Absent when there are none.
    */
   files?: WorkspaceFile[] | null;
+  /**
+   * Rich components a tool asked this turn to display, in the order it
+   * sent them — see `MessageComponent`. Absent when there are none.
+   */
+  components?: MessageComponent[] | null;
+}
+
+/**
+ * A component a uraiJS tool asked the chat to display, sent as
+ * `meta.urai.sendCommand(thread_id, { command: "displayComponent",
+ * component, props })`. The widget never runs anything the tool sent: it
+ * looks `component` up among the renderers the host registered and hands
+ * it `props`. Both are tool output — treat `props` as untrusted input.
+ */
+export interface MessageComponent {
+  /** Server id once persisted. Absent while the turn is still streaming. */
+  id?: string;
+  /** The registered name, e.g. `OrderCard`. */
+  component: string;
+  props: Record<string, unknown>;
 }
 
 /**
@@ -253,13 +273,27 @@ export class Transport {
     return res.json();
   }
 
+  /**
+   * `vars` are the host's current vars, written to the thread before the
+   * turn is built. Sent on every message so a refreshed value (a host
+   * session token) reaches the turn it starts, rather than relying on a
+   * `setVars` PATCH that may not have landed — or, for a thread restored
+   * from storage, never been sent. `null` is not sent: clearing is
+   * `updateThreadVars`' job.
+   */
   async sendMessage(
     threadId: string,
     content: string,
     attachments?: WidgetAttachment[],
+    vars?: Record<string, unknown> | null,
   ): Promise<SendMessageResult> {
-    const body: { content: string; attachments?: WidgetAttachment[] } = { content };
+    const body: {
+      content: string;
+      attachments?: WidgetAttachment[];
+      vars?: Record<string, unknown>;
+    } = { content };
     if (attachments && attachments.length > 0) body.attachments = attachments;
+    if (vars) body.vars = vars;
     const res = await fetch(this.url(`/threads/${threadId}/messages`), {
       method: "POST",
       headers: this.headers(),

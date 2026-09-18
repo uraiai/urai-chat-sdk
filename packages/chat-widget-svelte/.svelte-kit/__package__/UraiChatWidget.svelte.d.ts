@@ -1,4 +1,4 @@
-import { type WidgetBehavior, type WidgetController, type WidgetLayout, type WidgetTheme, type WidgetVars } from "@uraiai/chat-widget-core";
+import { type ComponentRenderers, type WidgetBehavior, type WidgetController, type WidgetLayout, type WidgetTheme, type WidgetVars } from "@uraiai/chat-widget-core";
 interface Props {
     widgetToken: string;
     userId: string;
@@ -15,6 +15,13 @@ interface Props {
     theme?: Partial<WidgetTheme>;
     layout?: Partial<WidgetLayout>;
     behavior?: Partial<WidgetBehavior>;
+    /**
+     * Renderers for rich components, by name — a uraiJS tool asks for one
+     * with `sendCommand(thread_id, { command: "displayComponent", component,
+     * props })`. Read when the widget is created. See `ComponentRenderer` in
+     * `@uraiai/chat-widget-core`.
+     */
+    displayComponents?: ComponentRenderers;
     /**
      * "floating" (default) appends a launcher to document.body;
      * "inline" renders the chat panel inside this component's div.

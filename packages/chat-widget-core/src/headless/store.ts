@@ -22,6 +22,7 @@ import { createReasoning } from "./reasoning";
 import { createToolActivity } from "./tool-activity";
 import { hydrateHistory, commitStream } from "./messages";
 import { freshFiles, shownFileVersions, withoutFiles } from "./files";
+import { parseDisplayComponent } from "./components";
 import { createNullSessionStore, type SessionStore } from "./persistence";
 import type { ChatTransport } from "./transport-port";
 import type {
@@ -321,6 +322,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         reasoning: null,
         tool: null,
         files: [],
+        components: [],
         attached: false,
       },
     });
@@ -367,7 +369,13 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         syncModels();
       },
       onCommand(command) {
+        // Every command still reaches the host, a displayComponent one
+        // included, so a host can log or mirror it.
         emit({ type: "command", command });
+        const component = parseDisplayComponent(command);
+        if (!component || g !== gen || !state.stream) return;
+        attach();
+        patchStream({ components: [...state.stream.components, component] });
       },
       onToolCallStarted({ id, fn_name }) {
         if (g !== gen) return;
@@ -502,10 +510,14 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
 
     try {
       const threadId = await ensureThread(g);
+      // Current vars ride along on every send, so a refreshed session token
+      // reaches this turn even when the `setVars` PATCH has not landed yet, or
+      // the thread was restored from storage and never PATCHed at all.
       const sent = await deps.transport.sendMessage(
         threadId,
         text,
         ready.map((p) => p.uploaded),
+        state.vars,
       );
       if (g !== gen) return;
       consumeStream(g, sent.assistant_message_id);

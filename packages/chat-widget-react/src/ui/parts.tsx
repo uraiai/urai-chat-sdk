@@ -182,18 +182,22 @@ export function Message({ id, isLast = false }: { id: string; isLast?: boolean }
     message.attachments.length > 0 ? <Attachments message={message} /> : null;
   const Files = components.FileList;
   const files = message.files?.length ? <Files files={message.files} /> : null;
+  const ComponentList = components.ComponentList;
+  const displayComponents = message.components?.length ? (
+    <ComponentList components={message.components} />
+  ) : null;
 
   if (message.role === "user") {
     const Slot = components.UserMessage;
     return (
       <MessageProvider id={id}>
-        <Slot message={message} isLast={isLast} content={message.content} attachments={attachments} files={null} />
+        <Slot message={message} isLast={isLast} content={message.content} attachments={attachments} files={null} displayComponents={null} />
       </MessageProvider>
     );
   }
   if (message.role === "error") {
     const Slot = components.ErrorMessage;
-    return <Slot message={message} isLast={isLast} content={message.content} attachments={null} files={null} />;
+    return <Slot message={message} isLast={isLast} content={message.content} attachments={null} files={null} displayComponents={null} />;
   }
 
   const Slot = components.AssistantMessage;
@@ -211,6 +215,7 @@ export function Message({ id, isLast = false }: { id: string; isLast?: boolean }
         }
         attachments={attachments}
         files={files}
+        displayComponents={displayComponents}
       />
     </MessageProvider>
   );
@@ -258,6 +263,7 @@ export function StreamingMessage() {
   const Reasoning = components.Reasoning;
   const ToolActivity = components.ToolActivity;
   const Files = components.FileList;
+  const ComponentList = components.ComponentList;
   const bodyId = `${idPrefix}-reasoning`;
   const expanded = stream.reasoning?.sealed ? reasoningOpen : true;
 
@@ -289,6 +295,11 @@ export function StreamingMessage() {
         ) : null
       }
       files={stream.files.length > 0 ? <Files files={stream.files} /> : null}
+      displayComponents={
+        stream.components.length > 0 ? (
+          <ComponentList components={stream.components} />
+        ) : null
+      }
     />
   );
 }

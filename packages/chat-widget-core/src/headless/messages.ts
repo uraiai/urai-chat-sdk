@@ -7,8 +7,8 @@ import type { ChatAttachment, ChatMessage, StreamSlice } from "./types";
 
 /**
  * Server history → view rows. System messages are dropped, and an
- * assistant turn with neither content nor files is skipped: it carries
- * nothing to show.
+ * assistant turn with no content, files or components is skipped: it
+ * carries nothing to show.
  */
 export function hydrateHistory(messages: ServerMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [];
@@ -27,7 +27,10 @@ export function hydrateHistory(messages: ServerMessage[]): ChatMessage[] {
           }),
         ),
       });
-    } else if (m.role === "assistant" && (m.content || m.files?.length)) {
+    } else if (
+      m.role === "assistant" &&
+      (m.content || m.files?.length || m.components?.length)
+    ) {
       out.push({
         id: m.id,
         role: "assistant",
@@ -37,6 +40,7 @@ export function hydrateHistory(messages: ServerMessage[]): ChatMessage[] {
         attachments: [],
         toolSummaries: m.tool_call_summaries ?? undefined,
         files: m.files?.length ? m.files : undefined,
+        components: m.components?.length ? m.components : undefined,
       });
     }
   }
@@ -52,5 +56,6 @@ export function commitStream(stream: StreamSlice): ChatMessage {
     reasoning: stream.reasoning?.text ? stream.reasoning.text : null,
     attachments: [],
     files: stream.files.length > 0 ? stream.files : undefined,
+    components: stream.components.length > 0 ? stream.components : undefined,
   };
 }

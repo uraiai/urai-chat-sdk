@@ -296,6 +296,7 @@ Required: `widgetToken`, `userId`.
 | `theme`, `layout`, `behavior` | Config overrides; applied live, above the server's. |
 | `fetchServerConfig` | `false` skips `GET /config` entirely. |
 | `components`, `classNames`, `labels`, `icons`, `unstyled` | Presentation. |
+| `displayComponents` | Rich components tools can show (below). |
 | `colorScheme` | `"host"` (default), `"light"`, `"dark"`, `"system"`. |
 | `className`, `style` | On the root element. |
 | `onReady`, `onUserMessage`, `onAssistantReply`, `onCommand`, `onError` | Events. |
@@ -308,6 +309,57 @@ before acting.
 
 Changing `widgetToken` or `baseUrl` rebuilds the client. `userId` and
 `vars` apply live, without tearing the chat down.
+
+## Rich components from tools
+
+A tool can put UI in the reply by naming a component and passing props:
+
+```ts
+// In a uraiJS tool
+await meta.urai.sendCommand(meta.vars.thread_id, {
+  command: "displayComponent",
+  component: "OrderCard",
+  props: { orderId: "o-1", status: "shipped" },
+});
+```
+
+Register React components under those names. Each one gets the tool's
+props as a single `props` object (not spread, so a tool can't set `key`,
+`ref` or `children`), plus `sendMessage` to reply as the visitor:
+
+```tsx
+import { UraiChat, type DisplayComponentProps } from "@uraiai/chat-widget-react/ui";
+
+function OrderCard({ props, sendMessage }: DisplayComponentProps<{ orderId: string }>) {
+  // The type parameter is a claim, not a check — validate tool output.
+  if (typeof props.orderId !== "string") return null;
+  return (
+    <div className="order-card">
+      Order {props.orderId}
+      <button onClick={() => sendMessage(`Cancel order ${props.orderId}`)}>Cancel</button>
+    </div>
+  );
+}
+
+<UraiChat widgetToken="…" userId="…" displayComponents={{ OrderCard }} />;
+```
+
+Components render inside the assistant bubble, below the text and above any
+files. They show live while the reply streams and again from history (the
+server saves them on the message). Names with no entry are skipped with a
+one-time console warning. Each component sits inside an error boundary, so a
+component that throws disappears without taking the conversation with it.
+
+`component` must start with a letter and contain only letters, digits and
+`_ . : -` (at most 100 characters); `props`, when given, must be an object.
+Anything else is not drawn. The payload is capped at 64 KB like every
+command, and it still reaches `command` listeners either way.
+
+To restyle or reorder them, replace the `ComponentList` slot (wrap
+`DefaultComponentList`, or render `DisplayComponent` per item). A replacement
+`AssistantMessage` or `StreamingMessage` slot must render
+`props.displayComponents` or no components are shown. The class-name key is
+`componentList` and the part is `[data-urai-part="component-list"]`.
 
 ## Light and dark
 
@@ -429,8 +481,15 @@ const widget = useRef<WidgetController>(null);
 
 Required: `widgetToken`, `userId`. Optional: `baseUrl`, `vars`, `theme`,
 `layout`, `behavior`, `mode` (`"floating"` default | `"inline"`),
-`className`/`style` (inline container only), and `onReady`, `onOpened`,
-`onClosed`, `onUserMessage`, `onAssistantReply`, `onCommand`, `onError`.
+`className`/`style` (inline container only), `displayComponents`, and
+`onReady`, `onOpened`, `onClosed`, `onUserMessage`, `onAssistantReply`,
+`onCommand`, `onError`.
+
+`displayComponents` maps names to DOM renderers,
+`(element, props, { sendMessage }) => cleanup?`. It is the same contract
+`@uraiai/chat-widget-core` documents under "Displaying rich components", and
+it is read when the widget is created. `element` is in your page's DOM, so
+you can `createRoot(element).render(…)` there and `unmount()` in the cleanup.
 
 | Prop | Effect |
 |---|---|

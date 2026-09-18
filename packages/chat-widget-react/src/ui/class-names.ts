@@ -49,6 +49,7 @@ export interface UraiChatClassNames {
   imageAttachment?: ClassValue;
   fileAttachment?: ClassValue;
   fileList?: ClassValue;
+  componentList?: ClassValue;
   composer?: ClassValue;
   composerInput?: ClassValue;
   sendButton?: ClassValue;

@@ -3,6 +3,8 @@ import {
   UraiChat,
   DefaultHeader,
   DefaultSendButton,
+  type DisplayComponentProps,
+  type UraiChatDisplayComponents,
   type UraiChatHandle,
 } from "@uraiai/chat-widget-react/ui";
 
@@ -22,7 +24,7 @@ import {
 const BASE_URL = import.meta.env.VITE_URAI_BASE_URL ?? "http://localhost:5174";
 const WIDGET_TOKEN =
   import.meta.env.VITE_URAI_WIDGET_TOKEN ??
-  "cc517efd-a93b-46ff-a82c-e5cc2fb161ef";
+  "5483cb41-52ca-450e-849b-8a3396f1ebde"
 
 /** Stand-ins for pages of a host app, each with its own context. */
 const ROUTES = [
@@ -32,6 +34,57 @@ const ROUTES = [
 ] as const;
 
 type Skin = "default" | "branded" | "unstyled";
+
+/**
+ * A component a tool can put in the reply. The host owns it entirely — the
+ * chat only ever learns its *name* and a JSON object, which is the whole
+ * security story: nothing crosses that is executable.
+ *
+ * A tool asks for it with:
+ *
+ *   await meta.urai.sendCommand(meta.vars.thread_id, {
+ *     command: "displayComponent",
+ *     component: "OrderCard",
+ *     props: { orderId: "o-1", status: "shipped", total: "$42.00" },
+ *   });
+ *
+ * `props` is tool output, so the type below is a claim rather than a check —
+ * read defensively, exactly as this does.
+ */
+function OrderCard({ props, sendMessage }: DisplayComponentProps) {
+  const orderId = typeof props.orderId === "string" ? props.orderId : "unknown";
+  const status = typeof props.status === "string" ? props.status : "pending";
+  const total = typeof props.total === "string" ? props.total : null;
+
+  return (
+    <div className="demo-order-card">
+      <div className="demo-order-head">
+        <strong>Order {orderId}</strong>
+        <span className={`demo-order-status is-${status}`}>{status}</span>
+      </div>
+      {total && <div className="demo-order-total">{total}</div>}
+      {/* The visitor replying through the component is the point of
+          `sendMessage` — the conversation continues rather than forking off
+          into the host app. */}
+      <button onClick={() => sendMessage(`Where is order ${orderId}?`)}>
+        Track this order
+      </button>
+    </div>
+  );
+}
+
+/**
+ * A component that throws, to show the boundary doing its job: it takes
+ * itself out of the transcript and leaves the conversation standing.
+ */
+function BrokenCard(): never {
+  throw new Error("BrokenCard blew up on purpose");
+}
+
+const DISPLAY_COMPONENTS: UraiChatDisplayComponents = {
+  OrderCard,
+  BrokenCard,
+};
 
 export function App() {
   const chat = useRef<UraiChatHandle>(null);
@@ -161,6 +214,24 @@ export function App() {
         </section>
 
         <section>
+          <h2>Display components</h2>
+          <p className="hint">
+            A uraiJS tool can put host UI in the reply by sending{" "}
+            <code>{'{ command: "displayComponent", component, props }'}</code>.
+            Registered here: <code>OrderCard</code> (renders) and{" "}
+            <code>BrokenCard</code> (throws, to show the error boundary). A name
+            with no entry renders nothing and warns once.
+          </p>
+          <p className="hint">
+            There is no host-side way to fake one — the command has to come from
+            a tool. <code>agent/SYSTEM_PROMPT.md</code> is an assistant that
+            does nothing but this: paste it in, ask about order{" "}
+            <code>o-1042</code>, then reload. The card comes back, because
+            chat-service persists it against the message.
+          </p>
+        </section>
+
+        <section>
           <h2>Other actions</h2>
           <div className="row">
             <button onClick={() => chat.current?.sendMessage("What can you do?")}>
@@ -210,6 +281,7 @@ export function App() {
             onReady={() => note("ready")}
             onUserMessage={(c) => note(`user-message: ${c.slice(0, 60)}`)}
             onAssistantReply={(c) => note(`assistant-reply: ${c.length} chars`)}
+            displayComponents={DISPLAY_COMPONENTS}
             onCommand={(c) => note(`command: ${JSON.stringify(c)}`)}
             onError={(e) => {
               note(`error: ${e}`);

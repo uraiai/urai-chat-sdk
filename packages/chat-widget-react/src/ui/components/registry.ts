@@ -3,6 +3,7 @@
 import type { ComponentType, ReactNode } from "react";
 import type {
   ChatMessage,
+  MessageComponent,
   PendingAttachment,
   StreamSlice,
   ThreadSummary,
@@ -55,6 +56,11 @@ export interface MessageSlotProps {
   attachments: ReactNode | null;
   /** Workspace files the turn produced, pre-rendered by the `FileList` slot. */
   files: ReactNode | null;
+  /**
+   * Components tools asked the turn to display, pre-rendered by the
+   * `ComponentList` slot. Only ever set on assistant messages.
+   */
+  displayComponents: ReactNode | null;
 }
 
 export interface StreamingMessageSlotProps {
@@ -64,6 +70,8 @@ export interface StreamingMessageSlotProps {
   toolActivity: ReactNode | null;
   /** Files the turn has produced so far, pre-rendered by `FileList`. */
   files: ReactNode | null;
+  /** Components the turn has asked for so far, pre-rendered by `ComponentList`. */
+  displayComponents: ReactNode | null;
 }
 
 export interface MarkdownSlotProps {
@@ -163,6 +171,46 @@ export interface FileListSlotProps {
   files: WorkspaceFile[];
 }
 
+/**
+ * Components a tool asked a turn to display. Never empty when rendered.
+ * Render each through `DisplayComponent`-style lookup against the
+ * `displayComponents` prop on `<Chat.Root>` — `DefaultComponentList` does.
+ */
+export interface ComponentListSlotProps {
+  components: MessageComponent[];
+}
+
+/**
+ * What a registered display component receives. A uraiJS tool asks for it
+ * with `meta.urai.sendCommand(thread_id, { command: "displayComponent",
+ * component, props })`.
+ */
+export interface DisplayComponentProps<
+  P extends Record<string, unknown> = Record<string, unknown>,
+> {
+  /**
+   * The tool's `props`, verbatim. It is tool output: the type parameter is
+   * a claim, not a check, so validate before trusting it.
+   */
+  props: P;
+  /** The name the tool asked for. */
+  component: string;
+  /** Send a message as the visitor, e.g. from a button in the component. */
+  sendMessage(text: string): void;
+}
+
+/**
+ * Component name → component, passed as `displayComponents` on
+ * `<Chat.Root>` / `<UraiChat>`. A name with no entry is not shown.
+ */
+export type UraiChatDisplayComponents = Record<
+  string,
+  // `any` so a component typed for its own props (`DisplayComponentProps<
+  // { orderId: string }>`) is assignable; parameters are contravariant.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ComponentType<DisplayComponentProps<any>>
+>;
+
 export interface ThreadItemSlotProps {
   thread: ThreadSummary;
   isActive: boolean;
@@ -208,6 +256,7 @@ export interface UraiChatComponents {
   SuggestedQuestions: ComponentType<SuggestedQuestionsSlotProps>;
   AttachmentList: ComponentType<AttachmentListSlotProps>;
   FileList: ComponentType<FileListSlotProps>;
+  ComponentList: ComponentType<ComponentListSlotProps>;
   Composer: ComponentType<ComposerSlotProps>;
   ComposerInput: ComponentType<
     React.TextareaHTMLAttributes<HTMLTextAreaElement>

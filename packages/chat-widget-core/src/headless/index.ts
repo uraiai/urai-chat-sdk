@@ -75,6 +75,11 @@ export {
   workspaceFileName,
 } from "./files";
 
+export {
+  DISPLAY_COMPONENT_COMMAND,
+  parseDisplayComponent,
+} from "./components";
+
 export type {
   ChatAttachment,
   ChatMessage,
@@ -89,6 +94,7 @@ export type {
 } from "./types";
 
 export type {
+  MessageComponent,
   ServerMessage,
   ThreadSummary,
   WidgetAttachment,

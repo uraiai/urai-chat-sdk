@@ -121,6 +121,32 @@ describe("UraiChatWidget (Vue)", () => {
     wrapper.unmount();
   });
 
+  it("renders displayComponent commands with displayComponents", async () => {
+    const OrderCard = vi.fn((el: HTMLElement, props: Record<string, unknown>) => {
+      el.textContent = `Order ${String(props.orderId)}`;
+    });
+    const wrapper = mount(UraiChatWidget, {
+      props: { widgetToken: TOKEN, userId: "v1", baseUrl: BASE, displayComponents: { OrderCard } },
+    });
+    await flushAsync();
+    const controller = (
+      wrapper.vm as unknown as {
+        controller: { open(): void; sendMessage(c: string): void };
+      }
+    ).controller;
+    controller.open();
+    controller.sendMessage("hi");
+    await flushAsync();
+
+    FakeEventSource.last()!.dispatch(
+      "command",
+      JSON.stringify({ command: "displayComponent", component: "OrderCard", props: { orderId: "o-1" } }),
+    );
+    expect(OrderCard).toHaveBeenCalledTimes(1);
+    expect(hosts()[0].querySelector("[data-urai-component]")?.textContent).toBe("Order o-1");
+    wrapper.unmount();
+  });
+
   it("emits events and exposes the controller", async () => {
     const wrapper = mount(UraiChatWidget, {
       props: { widgetToken: TOKEN, userId: "v1", baseUrl: BASE },

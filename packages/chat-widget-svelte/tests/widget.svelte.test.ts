@@ -158,6 +158,38 @@ describe("UraiChatWidget (Svelte)", () => {
     target.remove();
   });
 
+  it("renders displayComponent commands with displayComponents", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const OrderCard = vi.fn((el: HTMLElement, props: Record<string, unknown>) => {
+      el.textContent = `Order ${String(props.orderId)}`;
+    });
+    const instance = mount(UraiChatWidget, {
+      target,
+      props: { widgetToken: TOKEN, userId: "v1", baseUrl: BASE, displayComponents: { OrderCard } },
+    });
+    flushSync();
+    await flushAsync();
+
+    const controller = (
+      instance as unknown as {
+        getController(): { open(): void; sendMessage(c: string): void } | null;
+      }
+    ).getController()!;
+    controller.open();
+    controller.sendMessage("hi");
+    await flushAsync();
+
+    FakeEventSource.last()!.dispatch(
+      "command",
+      JSON.stringify({ command: "displayComponent", component: "OrderCard", props: { orderId: "o-1" } }),
+    );
+    expect(OrderCard).toHaveBeenCalledTimes(1);
+    expect(hosts()[0].querySelector("[data-urai-component]")?.textContent).toBe("Order o-1");
+    unmount(instance);
+    target.remove();
+  });
+
   it("fires onready callback", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);

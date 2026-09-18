@@ -5,6 +5,7 @@ import type { ResolvedConfig } from "./config";
 import { ICONS } from "./icons";
 import { renderMarkdown } from "./markdown";
 import type {
+  MessageComponent,
   ServerMessage,
   ThreadSummary,
   Transport,
@@ -27,6 +28,7 @@ import {
   isScriptableFile,
   workspaceFileName,
 } from "./headless/files";
+import { parseDisplayComponent } from "./headless/components";
 import {
   filterThreads,
   groupByRecency,
@@ -60,9 +62,40 @@ interface MountArgs {
   previewMode?: boolean;
   /** Instance-scoped event sink (the controller's Emitter). */
   emit: (event: WidgetEvent) => void;
+  /** Renderers for components tools ask to display, by name. */
+  displayComponents?: ComponentRenderers;
 }
 
 export type WidgetVars = Record<string, unknown>;
+
+/**
+ * Draws one component a tool asked for with
+ * `sendCommand(thread_id, { command: "displayComponent", component, props })`.
+ *
+ * `element` lives in the host page's DOM — projected into the reply
+ * bubble through a `<slot>` — so the page's own stylesheets apply and a
+ * React, Vue or Svelte app can be mounted into it. Return a cleanup
+ * function to run when the message leaves the transcript (new
+ * conversation, thread switch, destroy).
+ *
+ * `props` is tool output: validate it before trusting it, and never put
+ * it into `innerHTML`.
+ */
+export type ComponentRenderer = (
+  element: HTMLElement,
+  props: Record<string, unknown>,
+  context: ComponentRenderContext,
+) => void | (() => void);
+
+export interface ComponentRenderContext {
+  /** The name the tool asked for — the key this renderer is registered under. */
+  component: string;
+  /** Send a message as the visitor, e.g. from a button in the component. */
+  sendMessage(text: string): void;
+}
+
+/** Component name → renderer. A name with no renderer is not shown. */
+export type ComponentRenderers = Record<string, ComponentRenderer>;
 
 /**
  * Argument to `startConversation`. Historically a bare vars object; the
@@ -266,6 +299,15 @@ export function mountWidget(args: MountArgs): MountedWidget {
    * under the turn that wrote it last. Cleared with the transcript.
    */
   const fileLists: ReturnType<typeof makeFileList>[] = [];
+  /**
+   * Every rendered component's light-DOM element and cleanup. Their slots
+   * go with the transcript, but the elements are children of the host
+   * element and would outlive it — see `disposeComponents`.
+   */
+  const mountedComponents: { element: HTMLElement; cleanup: (() => void) | null }[] = [];
+  let componentSlotSeq = 0;
+  /** Names already warned about, so a missing renderer logs once. */
+  const unknownComponents = new Set<string>();
 
   function applyLayoutAttrs() {
     root.dataset.mode = config.layout.mode;
@@ -276,6 +318,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
 
   function render() {
     applyLayoutAttrs();
+    disposeComponents();
     root.innerHTML = "";
 
     if (config.layout.mode === "floating") {
@@ -550,6 +593,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     }
     body.innerHTML = "";
     clearSuggested();
+    disposeComponents();
     shownFileVersions.clear();
     fileLists.length = 0;
     syncArchiveButton();
@@ -944,6 +988,95 @@ export function mountWidget(args: MountArgs): MountedWidget {
     };
   }
 
+  // ---- Rich components ---------------------------------------------------
+
+  /**
+   * The components row on an assistant bubble, created on the first
+   * component. It sits above the files row whichever arrives first, so the
+   * reply reads text → components → files live and in history alike.
+   */
+  function makeComponentList(bubble: HTMLDivElement) {
+    let row: HTMLDivElement | null = null;
+    return {
+      add(item: MessageComponent) {
+        if (!row) {
+          row = document.createElement("div");
+          row.className = "ucw-components";
+          bubble.insertBefore(row, bubble.querySelector(":scope > .ucw-files"));
+        }
+        mountComponent(row, item);
+        if (row.childElementCount === 0) {
+          row.remove();
+          row = null;
+        }
+        scrollToBottom();
+      },
+    };
+  }
+
+  /**
+   * Render one component. The renderer draws into an element appended to
+   * the **host element's light DOM** and projected into the bubble through
+   * a named `<slot>`: inside the closed shadow root, the page's stylesheets
+   * would not apply and a framework app mounted there could not be styled.
+   *
+   * Renderers are looked up as own properties only, so a tool naming
+   * `constructor` or `toString` finds nothing. One that throws is logged
+   * and its element removed; the rest of the reply is unaffected.
+   */
+  function mountComponent(row: HTMLElement, item: MessageComponent) {
+    const renderers = args.displayComponents;
+    const renderer =
+      renderers && Object.prototype.hasOwnProperty.call(renderers, item.component)
+        ? renderers[item.component]
+        : undefined;
+    if (typeof renderer !== "function") {
+      if (!unknownComponents.has(item.component)) {
+        unknownComponents.add(item.component);
+        console.warn(
+          `[UraiChat] no renderer registered for component "${item.component}"`,
+        );
+      }
+      return;
+    }
+
+    const slotName = `ucw-component-${++componentSlotSeq}`;
+    const element = document.createElement("div");
+    element.slot = slotName;
+    element.dataset.uraiComponent = item.component;
+    hostElement.appendChild(element);
+    const slot = document.createElement("slot");
+    slot.name = slotName;
+    row.appendChild(slot);
+
+    const mounted = { element, cleanup: null as (() => void) | null };
+    mountedComponents.push(mounted);
+    try {
+      const cleanup = renderer(element, item.props, {
+        component: item.component,
+        sendMessage: sendMessageAsVisitor,
+      });
+      if (typeof cleanup === "function") mounted.cleanup = cleanup;
+    } catch (e) {
+      console.error(`[UraiChat] component "${item.component}" failed to render:`, e);
+      mountedComponents.splice(mountedComponents.indexOf(mounted), 1);
+      element.remove();
+      slot.remove();
+    }
+  }
+
+  /** Run every component's cleanup and remove its element. */
+  function disposeComponents() {
+    for (const { element, cleanup } of mountedComponents.splice(0)) {
+      try {
+        cleanup?.();
+      } catch (e) {
+        console.error("[UraiChat] component cleanup failed:", e);
+      }
+      element.remove();
+    }
+  }
+
   function appendAssistantText(
     text: string,
     toolSummaries?: Record<string, string>,
@@ -1192,6 +1325,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
 
   function renderHistory(messages: ServerMessage[]) {
     // Every caller has just emptied the transcript.
+    disposeComponents();
     shownFileVersions.clear();
     fileLists.length = 0;
     renderHistoryMessages(messages);
@@ -1207,7 +1341,10 @@ export function mountWidget(args: MountArgs): MountedWidget {
           attachment: a,
         }));
         appendUserBubble(m.content, atts);
-      } else if (m.role === "assistant" && (m.content || m.files?.length)) {
+      } else if (
+        m.role === "assistant" &&
+        (m.content || m.files?.length || m.components?.length)
+      ) {
         // Pass per-message tool-call summaries so <urai-tool-call>
         // markers render as visible chips with the LLM-generated
         // label rather than vanishing silently.
@@ -1215,6 +1352,10 @@ export function mountWidget(args: MountArgs): MountedWidget {
           m.content,
           m.tool_call_summaries ?? undefined,
         );
+        if (m.components?.length) {
+          const components = makeComponentList(bubble);
+          for (const c of m.components) components.add(c);
+        }
         if (m.files?.length) {
           const list = makeFileList(bubble, m.thread_id);
           list.set(m.files);
@@ -1289,7 +1430,13 @@ export function mountWidget(args: MountArgs): MountedWidget {
     const thinking = appendThinking();
     try {
       const threadId = await ensureThread();
-      const send = await transport.sendMessage(threadId, text, uploadedDescriptors);
+      // Current vars ride along on every send — see `transport.sendMessage`.
+      const send = await transport.sendMessage(
+        threadId,
+        text,
+        uploadedDescriptors,
+        state.currentVars,
+      );
       if (destroyed) return;
       // Build the bubble but don't attach it yet — the thinking pill
       // stays until the first real model output (chunk OR reasoning).
@@ -1303,6 +1450,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
       const tools = makeToolActivityTracker(bubble);
       const reasoning = makeReasoningSection(bubble);
       const files = makeFileList(bubble, threadId);
+      const components = makeComponentList(bubble);
       let bubbleAttached = false;
       let buf = "";
 
@@ -1330,6 +1478,10 @@ export function mountWidget(args: MountArgs): MountedWidget {
         },
         onCommand(command) {
           emit({ type: "command", command });
+          const component = parseDisplayComponent(command);
+          if (!component || destroyed) return;
+          onFirstSignal();
+          components.add(component);
         },
         onToolCallStarted({ id, fn_name }) {
           if (destroyed) return;
@@ -1502,6 +1654,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     }
     clearPendingAttachments();
     revokeAttachmentObjectUrls();
+    disposeComponents();
     shownFileVersions.clear();
     fileLists.length = 0;
     syncArchiveButton();
@@ -1529,6 +1682,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
       state.forceNewOnNextCreate = false;
       clearPendingAttachments();
       revokeAttachmentObjectUrls();
+      disposeComponents();
       shownFileVersions.clear();
       fileLists.length = 0;
       syncArchiveButton();
@@ -1668,17 +1822,20 @@ export function mountWidget(args: MountArgs): MountedWidget {
       previewTimer = null;
     }
     revokeAttachmentObjectUrls();
+    disposeComponents();
     hostElement.remove();
+  }
+
+  function sendMessageAsVisitor(text: string) {
+    textarea.value = text;
+    void submit();
   }
 
   return {
     open,
     close,
     toggle,
-    sendMessage: (t: string) => {
-      textarea.value = t;
-      submit();
-    },
+    sendMessage: sendMessageAsVisitor,
     reset,
     setUser,
     setVars,

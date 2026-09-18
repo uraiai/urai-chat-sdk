@@ -402,6 +402,12 @@ export const baseStyles = `
   gap: 6px;
   margin-top: 6px;
 }
+.ucw-components {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
 .ucw-attachment-image {
   display: block;
   max-width: 220px;
