@@ -63,6 +63,8 @@ export {
 } from "./persistence";
 
 export { hydrateHistory, commitStream } from "./messages";
+export { replaceMath, normalizeMathDelimiters } from "./math-delimiters";
+export type { MathSpan } from "./math-delimiters";
 
 export {
   fileVersion,

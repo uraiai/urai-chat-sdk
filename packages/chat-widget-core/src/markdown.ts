@@ -1,5 +1,7 @@
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
+import katex from "katex";
+import { replaceMath, type MathSpan } from "./headless/math-delimiters";
 
 // Instance-scoped Marked so we never mutate the global `marked` singleton —
 // a host application may be using it with its own options.
@@ -295,6 +297,71 @@ function injectSvgs(html: string, svgs: string[]): string {
   );
 }
 
+/**
+ * Pull math out of the prose and leave a placeholder behind, the same way
+ * `extractSvgs` does and for the same reason: the markdown pass must never
+ * see it. `marked` has no math syntax, so `$O(\log N)$` would reach the
+ * visitor as raw TeX — and `_` / `*` inside a formula would be read as
+ * emphasis on the way.
+ */
+function extractMath(text: string): { text: string; math: MathSpan[] } {
+  const math: MathSpan[] = [];
+  const out = replaceMath(text, (span) => {
+    const idx = math.push(span) - 1;
+    return span.display
+      ? `\n\n<div class="ucw-math ucw-math-display" data-ucw-math="${idx}"></div>\n\n`
+      : `<span class="ucw-math" data-ucw-math="${idx}"></span>`;
+  });
+  return { text: out, math };
+}
+
+/**
+ * KaTeX, MathML output only. The widget lives on a customer's page, and
+ * KaTeX's HTML output needs its stylesheet and a set of web fonts shipped
+ * into that page; MathML renders natively in every current browser with
+ * neither.
+ *
+ * The output is sanitized anyway. `semantics` and `annotation` are let back
+ * in because DOMPurify's MathML profile drops them but keeps their text —
+ * which would print the raw TeX after every formula. `annotation-xml`, the
+ * one that can carry HTML, stays out.
+ */
+const MATH_PURIFY = {
+  USE_PROFILES: { mathMl: true, html: true },
+  ADD_TAGS: ["semantics", "annotation"],
+};
+
+function renderMath(span: MathSpan): string {
+  let html: string;
+  try {
+    html = katex.renderToString(span.tex, {
+      output: "mathml",
+      displayMode: span.display,
+      throwOnError: true,
+      // Unicode in math mode and the like: render it, don't warn into the
+      // host page's console.
+      strict: false,
+    });
+  } catch {
+    // Not valid TeX after all (or still streaming): show it as written.
+    return escapeHtml(span.source);
+  }
+  const clean = DOMPurify.sanitize(html, MATH_PURIFY);
+  return span.display ? `<div class="ucw-math-display">${clean}</div>` : clean;
+}
+
+/** Fill the placeholders left by `extractMath` with rendered formulas. */
+function injectMath(html: string, math: MathSpan[]): string {
+  if (!math.length) return html;
+  return html.replace(
+    /<(span|div)\b[^>]*\bdata-ucw-math="(\d+)"[^>]*>\s*<\/\1>/gi,
+    (full, _tag: string, idx: string) => {
+      const span = math[Number(idx)];
+      return span === undefined ? full : renderMath(span);
+    },
+  );
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
     switch (c) {
@@ -350,11 +417,13 @@ export function renderMarkdown(
   // Runs after the js-action strip so code actions that happen to embed
   // an SVG fence stay stripped rather than rendering.
   const { text: withoutSvg, svgs } = extractSvgs(prepared);
-  const html = md.parse(withoutSvg, { async: false }) as string;
+  // Math likewise: out before `marked`, rendered and put back after.
+  const { text: withoutMath, math } = extractMath(withoutSvg);
+  const html = md.parse(withoutMath, { async: false }) as string;
   const safe = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
-    ALLOWED_ATTR: ["href", "title", "target", "rel", "class", "data-ucw-svg"],
+    ALLOWED_ATTR: ["href", "title", "target", "rel", "class", "data-ucw-svg", "data-ucw-math"],
     ADD_ATTR: ["target"],
   });
-  return injectSvgs(safe, svgs);
+  return injectMath(injectSvgs(safe, svgs), math);
 }

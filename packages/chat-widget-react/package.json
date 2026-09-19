@@ -1,6 +1,6 @@
 {
   "name": "@uraiai/chat-widget-react",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "React component for the Urai chat widget",
   "license": "MIT",
   "type": "module",
@@ -31,9 +31,11 @@
   "dependencies": {
     "@uraiai/chat-widget-core": "workspace:^",
     "react-markdown": "^9",
+    "rehype-katex": "^7",
     "rehype-raw": "^7",
     "rehype-sanitize": "^6",
     "remark-gfm": "^4",
+    "remark-math": "^6",
     "unist-util-visit": "^5"
   },
   "peerDependencies": {

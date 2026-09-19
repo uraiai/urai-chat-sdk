@@ -231,6 +231,14 @@ export const baseStyles = `
   font-style: italic;
   color: var(--ucw-muted);
 }
+/* Display math (KaTeX, MathML output). Its own scroll container, like
+ * the SVG block, so a wide formula scrolls instead of widening the panel. */
+.ucw-math-display {
+  overflow-x: auto;
+  max-width: 100%;
+  margin: 6px 0;
+  text-align: center;
+}
 .ucw-bubble img { max-width: 100%; height: auto; border-radius: 6px; }
 /* display:block turns the table into its own scroll container so a wide
  * one scrolls itself instead of widening the panel. */

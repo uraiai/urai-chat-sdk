@@ -18,6 +18,6 @@ export default defineConfig({
   // at module scope, which defeats shaking through a prebuilt dist.
   splitting: true,
   // Previously inlined, so an app already using `marked` shipped it
-  // twice. Both stay in `dependencies`.
-  external: ["marked", "dompurify"],
+  // twice. All three stay in `dependencies`.
+  external: ["marked", "dompurify", "katex"],
 });

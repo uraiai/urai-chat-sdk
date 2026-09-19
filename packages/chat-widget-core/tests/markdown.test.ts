@@ -203,3 +203,50 @@ describe("renderMarkdown — tool-call markers", () => {
     expect(html).toContain("Fetched prices");
   });
 });
+
+describe("renderMarkdown — math", () => {
+  it("renders single-dollar inline math as MathML, not raw TeX", () => {
+    const html = renderMarkdown("Insertion: $O(\\log N)$ — fast.");
+    expect(html).toContain("<math");
+    expect(html).toContain("<mi>N</mi>");
+    expect(html).not.toContain("$O(");
+    // The TeX survives only as the hidden annotation, never as visible text.
+    expect(html).toMatch(/<annotation encoding="application\/x-tex">O\(\\log N\)<\/annotation>/);
+  });
+
+  it("keeps formulas away from markdown emphasis", () => {
+    const html = renderMarkdown("$a_1 * b_2 * c$");
+    expect(html).not.toContain("<em>");
+    expect(html).toContain("<msub>");
+  });
+
+  it("renders display math as its own block", () => {
+    const html = renderMarkdown("Sum:\n\n$$\n\\sum_{i=1}^n i\n$$\n\nDone.");
+    expect(html).toContain('class="ucw-math-display"');
+    expect(html).toContain('display="block"');
+  });
+
+  it("leaves prices as prose", () => {
+    const html = renderMarkdown("It costs $5 and $10.");
+    expect(html).not.toContain("<math");
+    expect(html).toContain("$5 and $10");
+  });
+
+  it("shows invalid TeX as written instead of an error", () => {
+    const html = renderMarkdown("broken $\\frac{a$ here");
+    expect(html).not.toContain("<math");
+    expect(html).toContain("$\\frac{a$");
+  });
+
+  it("does not render math inside code", () => {
+    const html = renderMarkdown("`$x$` and\n\n```\n$y$\n```");
+    expect(html).not.toContain("<math");
+  });
+
+  it("escapes markup written inside TeX instead of rendering it", () => {
+    const html = renderMarkdown("$\\text{<img src=x onerror=alert(1)>}$");
+    expect(html).toContain("<math");
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img");
+  });
+});

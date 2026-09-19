@@ -175,3 +175,38 @@ describe("React view — tool-call markers", () => {
     expect(body.textContent).toContain("Working");
   });
 });
+
+describe("React view — math", () => {
+  it("renders single-dollar inline math as MathML, not raw TeX", async () => {
+    const container = await say("Insertion: $O(\\log N)$ — fast.");
+    const math = container.querySelector("math");
+    expect(math).not.toBeNull();
+    expect(math?.getAttribute("display")).not.toBe("block");
+    expect(container.textContent).not.toContain("$O(");
+    // The sanitizer ran before KaTeX, so the math node reached it intact.
+    expect(container.querySelector("code.language-math")).toBeNull();
+  });
+
+  it("renders \\[…\\] as display math", async () => {
+    const container = await say("Sum:\n\n\\[ \\sum_{i=1}^n i \\]\n\nDone.");
+    expect(container.querySelector('math[display="block"]')).not.toBeNull();
+  });
+
+  it("leaves prices as prose", async () => {
+    const container = await say("It costs $5 and $10.");
+    expect(container.querySelector("math")).toBeNull();
+    expect(container.textContent).toContain("$5 and $10");
+  });
+
+  it("does not render math inside code", async () => {
+    const container = await say("`$x$` stays code");
+    expect(container.querySelector("math")).toBeNull();
+    expect(container.querySelector("code")?.textContent).toBe("$x$");
+  });
+
+  it("still sanitizes raw HTML alongside the math", async () => {
+    const container = await say('$x$ <img src=x onerror="globalThis.__pwned = 1">');
+    expect(container.querySelector("math")).not.toBeNull();
+    expect(container.querySelector("[onerror]")).toBeNull();
+  });
+});

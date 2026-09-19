@@ -3,9 +3,12 @@
 import { createContext, memo, useContext, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import rehypeRaw from "rehype-raw";
+import rehypeKatex from "rehype-katex";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { visit } from "unist-util-visit";
+import { normalizeMathDelimiters } from "@uraiai/chat-widget-core/headless";
 import { usePresentation } from "./context";
 import { useChatConfig } from "./hooks";
 import { cx } from "./class-names";
@@ -265,15 +268,34 @@ export function splitStableTail(text: string): { stable: string; tail: string } 
   return { stable: text.slice(0, lastBoundary), tail: text.slice(lastBoundary) };
 }
 
+/**
+ * `$…$` is off in remark-math because it would typeset "costs $5 and $10";
+ * `normalizeMathDelimiters` rewrites the math models actually write into
+ * `$$…$$` first, under a rule that leaves prices alone.
+ */
+const remarkPlugins = [remarkGfm, [remarkMath, { singleDollarTextMath: false }]];
+
+/**
+ * KaTeX runs **after** the sanitizer, on the math nodes remark-math left as
+ * `code.language-math` — so the schema never has to admit MathML, and what
+ * KaTeX emits comes from TeX, not from the model's HTML. MathML output only:
+ * KaTeX's HTML output needs its stylesheet and fonts in the customer's page,
+ * and MathML renders natively without either. `trust` stays off (no
+ * `\href`, no `\htmlClass`); `strict: false` keeps warnings out of the host
+ * page's console.
+ */
+const rehypePlugins = [
+  rehypeRaw,
+  rehypeUnwrapUraiToolCall,
+  [rehypeSanitize, schema],
+  [rehypeKatex, { output: "mathml", strict: false }],
+];
+
 const MarkdownBlock = memo(function MarkdownBlock({ text }: { text: string }) {
-  const plugins = useMemo(
-    () => [rehypeRaw, rehypeUnwrapUraiToolCall, [rehypeSanitize, schema]],
-    [],
-  );
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={plugins as never}
+      remarkPlugins={remarkPlugins as never}
+      rehypePlugins={rehypePlugins as never}
       components={{
         ...({ "urai-tool-call": UraiToolCallMarker } as unknown as Record<string, never>),
       }}
@@ -295,7 +317,7 @@ export function Markdown({
 
   // Unwrap SVG fences before the split, so the two SVG shapes converge on
   // one path and a fence can never be cut in half by it.
-  const source = useMemo(() => unfenceSvg(text), [text]);
+  const source = useMemo(() => normalizeMathDelimiters(unfenceSvg(text)), [text]);
 
   // A finished message never needs the split — memoize the whole thing.
   const { stable, tail } = useMemo(
