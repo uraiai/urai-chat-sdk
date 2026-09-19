@@ -11,6 +11,7 @@ import type {
   ThreadSummary,
   WidgetAttachment,
 } from "../../chat-widget-core/src/transport";
+import { WidgetHttpError } from "../../chat-widget-core/src/transport";
 
 export interface FakeTransportCall {
   method: string;
@@ -21,6 +22,8 @@ export interface FakeTransportOptions {
   config?: Partial<ServerConfig>;
   threads?: ThreadSummary[];
   messages?: Record<string, ServerMessage[]>;
+  /** Thread ids `listMessages` answers with a 404, as the server does for another visitor's thread. */
+  missingThreads?: string[];
   /** Throw from a named method to exercise a failure branch. */
   fail?: Partial<Record<keyof ChatTransport, Error>>;
 }
@@ -83,6 +86,23 @@ export function makeFakeTransport(
       return opts.threads ?? [];
     },
 
+    async getThread(threadId) {
+      record("getThread", threadId);
+      const found = opts.threads?.find((x) => x.id === threadId);
+      if (found) return found;
+      if (opts.messages?.[threadId]) {
+        return {
+          id: threadId,
+          title: `Thread ${threadId}`,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          last_message_at: null,
+          last_message_preview: null,
+        };
+      }
+      throw new WidgetHttpError(`get thread failed: 404`, 404);
+    },
+
     async createOrResumeThread(body) {
       record("createOrResumeThread", body);
       return { thread_id: `t${++threadSeq}`, created: true } as CreateThreadResult;
@@ -98,6 +118,9 @@ export function makeFakeTransport(
 
     async listMessages(threadId) {
       record("listMessages", threadId);
+      if (opts.missingThreads?.includes(threadId)) {
+        throw new WidgetHttpError(`list messages failed: 404`, 404);
+      }
       return opts.messages?.[threadId] ?? [];
     },
 

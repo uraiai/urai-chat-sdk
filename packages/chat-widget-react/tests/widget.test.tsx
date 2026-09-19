@@ -34,6 +34,35 @@ function widgetRoutes(token: string) {
   };
 }
 
+function threadRoutes(token: string) {
+  const history = (id: string) => [
+    {
+      id: `${id}-m`,
+      thread_id: id,
+      message_idx: 0,
+      role: "assistant",
+      content: `answer ${id}`,
+      reasoning: null,
+      created_at: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const summary = (id: string) => ({
+    id,
+    title: `Thread ${id}`,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    last_message_at: null,
+    last_message_preview: null,
+  });
+  return {
+    ...widgetRoutes(token),
+    [`GET /api/widget/v1/${token}/threads/tA/messages`]: () => history("tA"),
+    [`GET /api/widget/v1/${token}/threads/tA`]: () => summary("tA"),
+    [`GET /api/widget/v1/${token}/threads/tB/messages`]: () => history("tB"),
+    [`GET /api/widget/v1/${token}/threads/tB`]: () => summary("tB"),
+  };
+}
+
 function hosts(): Element[] {
   return Array.from(document.querySelectorAll("[data-urai-chat-widget]"));
 }
@@ -166,5 +195,44 @@ describe("UraiChatWidget (React)", () => {
     );
     await act(flushAsync);
     expect(onReady).toHaveBeenCalledOnce();
+  });
+
+  it("reports the created thread through onThreadChange", async () => {
+    const ref = createRef<WidgetController>();
+    const onThreadChange = vi.fn();
+    render(
+      <UraiChatWidget
+        ref={ref}
+        widgetToken={TOKEN}
+        userId="v1"
+        baseUrl={BASE}
+        onThreadChange={onThreadChange}
+      />,
+    );
+    await act(flushAsync);
+    act(() => ref.current!.sendMessage("hi"));
+    await act(flushAsync);
+    expect(onThreadChange).toHaveBeenCalledWith("t1", {
+      previousThreadId: null,
+      reason: "created",
+    });
+    expect(ref.current!.getThreadId()).toBe("t1");
+  });
+
+  it("opens a new threadId in place, without remounting", async () => {
+    const { calls } = installFakeFetch(threadRoutes(TOKEN));
+    const ref = createRef<WidgetController>();
+    const props = { widgetToken: TOKEN, userId: "v1", baseUrl: BASE, readOnly: true };
+    const { rerender } = render(<UraiChatWidget ref={ref} {...props} threadId="tA" />);
+    await act(flushAsync);
+    const host = hosts()[0];
+    rerender(<UraiChatWidget ref={ref} {...props} threadId="tB" />);
+    await act(flushAsync);
+    expect(hosts()[0]).toBe(host);
+    expect(ref.current!.getThreadId()).toBe("tB");
+    expect(calls.filter((c) => c.pathname.endsWith("/messages")).map((c) => c.pathname)).toEqual([
+      `/api/widget/v1/${TOKEN}/threads/tA/messages`,
+      `/api/widget/v1/${TOKEN}/threads/tB/messages`,
+    ]);
   });
 });

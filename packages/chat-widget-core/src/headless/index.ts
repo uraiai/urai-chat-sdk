@@ -95,6 +95,9 @@ export type {
   WidgetVars,
 } from "./types";
 
+export type { ThreadChangeReason } from "../events";
+export { WidgetHttpError } from "../transport";
+
 export type {
   MessageComponent,
   ServerMessage,

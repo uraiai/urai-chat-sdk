@@ -15,7 +15,7 @@ import type {
 } from "./transport";
 import { clearThread, loadThread, saveThread } from "./session";
 import { saveBlob } from "./download";
-import type { WidgetEvent } from "./events";
+import type { ThreadChangeReason, WidgetEvent } from "./events";
 import { applyTheme } from "./theme";
 import { baseStyles } from "./styles";
 // Framework-agnostic models. This file owns the DOM; these own the state.
@@ -54,6 +54,13 @@ interface MountArgs {
    */
   initialCollections?: string[] | null;
   hostElement: HTMLElement;
+  /** Open this thread at mount instead of auto-restoring. */
+  initialThreadId?: string | null;
+  /**
+   * Transcript only: no composer, switcher or welcome; sends, uploads and
+   * resets are refused; nothing is written to the thread or to storage.
+   */
+  readOnly?: boolean;
   /**
    * When true, all transport calls are bypassed: submit() renders a fake
    * streaming reply, threads are not created server-side, and
@@ -139,6 +146,9 @@ export interface MountedWidget {
   setVars(vars: WidgetVars | null): void;
   setCollections(collections: string[] | null): void;
   startConversation(opts?: StartConversationArg): void;
+  /** Show a thread the host chose. `null` clears the conversation. */
+  openThread(threadId: string | null): void;
+  getThreadId(): string | null;
   applyConfig(config: ResolvedConfig): void;
   /**
    * Tear the widget down: close any in-flight SSE stream, cancel preview
@@ -201,6 +211,7 @@ interface UiState {
 export function mountWidget(args: MountArgs): MountedWidget {
   const { shadow, transport, hostElement, widgetToken } = args;
   const previewMode = !!args.previewMode;
+  const readOnly = !!args.readOnly;
   let config = args.config;
   /**
    * Whether the persistent per-marker chip is rendered in the prose. Off
@@ -247,6 +258,36 @@ export function mountWidget(args: MountArgs): MountedWidget {
       activeStreamClose = null;
     }
   }
+
+  /**
+   * The only place `state.threadId` changes, so `thread-change` cannot miss
+   * a path. Emits only on a real change.
+   */
+  function setThreadId(threadId: string | null, reason: ThreadChangeReason) {
+    const previousThreadId = state.threadId;
+    state.threadId = threadId;
+    if (previousThreadId !== threadId) {
+      emit({ type: "thread-change", threadId, previousThreadId, reason });
+    }
+  }
+
+  const readOnlyWarned = new Set<string>();
+  /** True (and a one-time warning) when a write is refused in read-only mode. */
+  function refuseReadOnly(action: string): boolean {
+    if (!readOnly) return false;
+    if (!readOnlyWarned.has(action)) {
+      readOnlyWarned.add(action);
+      console.warn(`[UraiChat] ${action}() ignored: the chat is read-only`);
+    }
+    return true;
+  }
+
+  /** Bumped per `openThread`, so a slower earlier open cannot land last. */
+  let openSeq = 0;
+  /** The thread the host asked for; a read-only view reopens it for a new visitor. */
+  let hostThreadId: string | null = args.initialThreadId || null;
+  /** A host-opened thread's title, shown in a read-only header. */
+  let threadTitle: string | null = null;
 
   const state: UiState = {
     threadId: null,
@@ -332,7 +373,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     }
 
     panel = document.createElement("div");
-    panel.className = "ucw-panel";
+    panel.className = readOnly ? "ucw-panel ucw-readonly" : "ucw-panel";
     panel.style.display = state.isOpen || config.layout.mode === "inline" ? "flex" : "none";
 
     if (config.layout.showHeader) {
@@ -354,7 +395,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     panelBodyArea.appendChild(body);
     panel.appendChild(panelBodyArea);
 
-    panel.appendChild(buildComposer());
+    if (!readOnly) panel.appendChild(buildComposer());
 
     if (config.behavior.footerText || config.behavior.disclaimer) {
       const f = document.createElement("div");
@@ -377,22 +418,34 @@ export function mountWidget(args: MountArgs): MountedWidget {
       header.appendChild(img);
     }
 
-    // The title doubles as the trigger for the thread-switcher dropdown
-    // (chevron points the way). Clicking toggles the dropdown.
-    threadTrigger = document.createElement("button");
-    threadTrigger.type = "button";
-    threadTrigger.className = "ucw-thread-trigger ucw-title";
-    threadTrigger.setAttribute("aria-haspopup", "menu");
-    threadTrigger.setAttribute("aria-expanded", "false");
-    const triggerLabel = document.createElement("span");
-    triggerLabel.className = "ucw-trigger-label";
-    triggerLabel.textContent = config.layout.brandName;
-    threadTrigger.appendChild(triggerLabel);
-    const chevron = document.createElement("span");
-    chevron.innerHTML = ICONS.chevron;
-    threadTrigger.appendChild(chevron);
-    threadTrigger.addEventListener("click", () => toggleDropdown());
-    header.appendChild(threadTrigger);
+    if (readOnly) {
+      // No switcher: it would navigate away from the thread the host asked
+      // to show. The title names that thread once its metadata lands.
+      const title = document.createElement("span");
+      title.className = "ucw-title";
+      const label = document.createElement("span");
+      label.className = "ucw-trigger-label";
+      label.textContent = titleText();
+      title.appendChild(label);
+      header.appendChild(title);
+    } else {
+      // The title doubles as the trigger for the thread-switcher dropdown
+      // (chevron points the way). Clicking toggles the dropdown.
+      threadTrigger = document.createElement("button");
+      threadTrigger.type = "button";
+      threadTrigger.className = "ucw-thread-trigger ucw-title";
+      threadTrigger.setAttribute("aria-haspopup", "menu");
+      threadTrigger.setAttribute("aria-expanded", "false");
+      const triggerLabel = document.createElement("span");
+      triggerLabel.className = "ucw-trigger-label";
+      triggerLabel.textContent = config.layout.brandName;
+      threadTrigger.appendChild(triggerLabel);
+      const chevron = document.createElement("span");
+      chevron.innerHTML = ICONS.chevron;
+      threadTrigger.appendChild(chevron);
+      threadTrigger.addEventListener("click", () => toggleDropdown());
+      header.appendChild(threadTrigger);
+    }
 
     // "Download everything" is thread-level, so it lives in the header —
     // the same place the app puts it — and appears once the transcript has
@@ -419,6 +472,15 @@ export function mountWidget(args: MountArgs): MountedWidget {
       header.appendChild(closeBtn);
     }
     return header;
+  }
+
+  function titleText(): string {
+    return (readOnly && threadTitle) || config.layout.brandName;
+  }
+
+  function syncTitle() {
+    const label = shadow.querySelector(".ucw-header .ucw-trigger-label") as HTMLElement | null;
+    if (label) label.textContent = titleText();
   }
 
   /** Show the zip button once the transcript has shown a file. */
@@ -587,8 +649,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
   async function switchToThread(id: string) {
     if (!transport) return;
     if (state.threadId === id) return;
-    state.threadId = id;
-    if (config.behavior.persistAcrossSessions) {
+    setThreadId(id, "selected");
+    if (config.behavior.persistAcrossSessions && !readOnly) {
       saveThread(widgetToken, state.userId, id);
     }
     body.innerHTML = "";
@@ -753,6 +815,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
   }
 
   function renderWelcome() {
+    // A welcome and starter questions invite a message read-only cannot send.
+    if (readOnly) return;
     if (!state.threadId && config.behavior.welcomeMessage) {
       appendAssistantText(config.behavior.welcomeMessage);
     }
@@ -1279,22 +1343,23 @@ export function mountWidget(args: MountArgs): MountedWidget {
       ? loadThread(widgetToken, state.userId)
       : null;
     if (cached) {
-      state.threadId = cached;
+      // Validated before it becomes the thread, so a stale id never
+      // surfaces as a `thread-change` for a thread that is not there.
       try {
         const msgs = await transport.listMessages(cached);
+        setThreadId(cached, "restored");
         if (msgs.length > 0) {
           // Replace welcome with actual history.
           body.innerHTML = "";
           clearSuggested();
           renderHistory(msgs);
         }
+        return cached;
       } catch {
         // If history fetch fails (e.g. server rotated tokens), drop the
         // stale cache and start fresh.
         clearThread(widgetToken, state.userId);
-        state.threadId = null;
       }
-      if (state.threadId) return state.threadId;
     }
     // Always force a fresh thread when we reach this point. The two
     // paths into here are (a) the visitor never had a cached thread,
@@ -1316,7 +1381,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     if (state.currentCollections) createBody.collections = state.currentCollections;
     const result = await transport.createOrResumeThread(createBody);
     state.forceNewOnNextCreate = false;
-    state.threadId = result.thread_id;
+    setThreadId(result.thread_id, "created");
     if (config.behavior.persistAcrossSessions) {
       saveThread(widgetToken, state.userId, result.thread_id);
     }
@@ -1373,7 +1438,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
   }
 
   async function submit() {
-    if (destroyed) return;
+    if (destroyed || refuseReadOnly("sendMessage")) return;
     const text = textarea.value.trim();
     if (state.isSending) return;
 
@@ -1606,6 +1671,9 @@ export function mountWidget(args: MountArgs): MountedWidget {
    */
   async function autoRestoreOnOpen() {
     if (!transport || destroyed) return;
+    // Read-only never reads the visitor's saved thread, and a host-chosen
+    // thread (open or still loading) wins over it.
+    if (readOnly || hostThreadId) return;
     if (state.threadId) return;
     if (state.forceNewOnNextCreate) return;
     if (!config.behavior.persistAcrossSessions) return;
@@ -1618,8 +1686,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
     // false` that expect zero network at mount.
     try {
       const msgs = await transport.listMessages(cachedId);
-      if (destroyed) return;
-      state.threadId = cachedId;
+      if (destroyed || state.threadId || hostThreadId) return;
+      setThreadId(cachedId, "restored");
       body.innerHTML = "";
       clearSuggested();
       renderHistory(msgs);
@@ -1642,9 +1710,97 @@ export function mountWidget(args: MountArgs): MountedWidget {
     else open();
   }
 
-  function reset() {
+  /**
+   * Show a thread the host chose (an id it saved from `thread-change`).
+   * Mirrors the headless store's `openThread`.
+   */
+  async function openThread(threadId: string | null) {
+    if (destroyed || previewMode) return;
+    hostThreadId = threadId;
+    const seq = ++openSeq;
+    if (threadId && threadId === state.threadId) return;
+
     closeActiveStream();
-    state.threadId = null;
+    threadTitle = null;
+    syncTitle();
+    clearSuggested();
+    clearPendingAttachments();
+    disposeComponents();
+    shownFileVersions.clear();
+    fileLists.length = 0;
+    body.innerHTML = "";
+
+    if (!threadId) {
+      // Like "New conversation": the next send creates, never resumes.
+      if (!readOnly) clearThread(widgetToken, state.userId);
+      state.forceNewOnNextCreate = !readOnly;
+      setThreadId(null, "opened");
+      syncArchiveButton();
+      renderWelcome();
+      return;
+    }
+    if (!transport) return;
+
+    const loading = appendNotice("Loading conversation…");
+    const [history, summary] = await Promise.all([
+      transport.listMessages(threadId).then(
+        (msgs) => ({ ok: true as const, msgs }),
+        (error: unknown) => ({ ok: false as const, error }),
+      ),
+      // Metadata only dresses the header; an older server lacks the route.
+      transport.getThread(threadId).catch(() => null),
+    ]);
+    if (destroyed || seq !== openSeq) return;
+    loading.remove();
+
+    if (!history.ok) {
+      const status = (history.error as { status?: unknown } | null)?.status;
+      const notFound = status === 404;
+      if (!readOnly) clearThread(widgetToken, state.userId);
+      state.forceNewOnNextCreate = !readOnly;
+      setThreadId(null, "opened");
+      syncArchiveButton();
+      appendNotice(
+        notFound
+          ? "This conversation is unavailable."
+          : "This conversation could not be loaded.",
+      );
+      emit({
+        type: "error",
+        error: notFound
+          ? `thread ${threadId} not found`
+          : history.error instanceof Error
+            ? history.error.message
+            : String(history.error),
+      });
+      return;
+    }
+
+    state.forceNewOnNextCreate = false;
+    setThreadId(threadId, "opened");
+    if (!readOnly && config.behavior.persistAcrossSessions) {
+      saveThread(widgetToken, state.userId, threadId);
+    }
+    threadTitle = summary?.title ?? null;
+    syncTitle();
+    renderHistory(history.msgs);
+    scrollToBottom();
+  }
+
+  /** A muted status line where the transcript would be. */
+  function appendNotice(text: string): HTMLElement {
+    const el = document.createElement("div");
+    el.className = "ucw-notice";
+    el.setAttribute("role", "status");
+    el.textContent = text;
+    body.appendChild(el);
+    return el;
+  }
+
+  function reset() {
+    if (refuseReadOnly("reset")) return;
+    closeActiveStream();
+    setThreadId(null, "reset");
     // Tell the next createOrResumeThread to actually create — without
     // this, the server's resume-by-default logic would hand back the
     // visitor's most recent existing thread.
@@ -1674,7 +1830,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
       closeActiveStream();
       state.userId = id;
       if (transport) transport.setWidgetUserId(id);
-      state.threadId = null;
+      setThreadId(null, "user-changed");
       cachedThreads = null;
       // Identity change is a fresh slate — clear any pending
       // "New conversation" intent so the new visitor's existing
@@ -1690,6 +1846,11 @@ export function mountWidget(args: MountArgs): MountedWidget {
         body.innerHTML = "";
         renderWelcome();
       }
+      // A read-only view shows one thread of one visitor; keep showing the
+      // thread the host asked for, now under the new visitor. Interactive
+      // mode starts the new visitor fresh instead.
+      if (readOnly && hostThreadId) void openThread(hostThreadId);
+      else hostThreadId = null;
     }
     // vars supplied alongside a setUser call become the default for the
     // next thread (whether the user changed or not). `undefined` means
@@ -1698,7 +1859,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
       state.currentVars = vars;
       // If we already have an active thread for this visitor, push the
       // change to the server so subsequent turns of that thread see it.
-      if (!userChanged && transport && state.threadId && !previewMode) {
+      if (!userChanged && transport && state.threadId && !previewMode && !readOnly) {
         void transport
           .updateThreadVars(state.threadId, vars)
           .catch((e) => console.warn("[UraiChat] setUser vars patch:", e));
@@ -1708,7 +1869,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
 
   function setVars(vars: WidgetVars | null) {
     state.currentVars = vars;
-    if (transport && state.threadId && !previewMode) {
+    // Read-only never writes to the thread it is showing.
+    if (transport && state.threadId && !previewMode && !readOnly) {
       void transport
         .updateThreadVars(state.threadId, vars)
         .catch((e) => console.warn("[UraiChat] setVars patch:", e));
@@ -1723,7 +1885,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
    */
   function setCollections(collections: string[] | null) {
     state.currentCollections = collections;
-    if (transport && state.threadId && !previewMode) {
+    if (transport && state.threadId && !previewMode && !readOnly) {
       void transport
         .updateThreadCollections(state.threadId, collections)
         .catch((e) => console.warn("[UraiChat] setCollections patch:", e));
@@ -1731,6 +1893,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
   }
 
   function startConversation(arg?: StartConversationArg) {
+    if (refuseReadOnly("startConversation")) return;
     // Buffer the vars so the next thread creation picks them up. We
     // don't hit the server now — the thread is created lazily on the
     // first message, which keeps "every navigation calls
@@ -1776,10 +1939,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
     // The header's "title" is now the thread-switcher trigger; updating
     // textContent would wipe its chevron icon. Target the label span
     // inside instead.
-    const triggerLabelEl = shadow.querySelector(
-      ".ucw-thread-trigger .ucw-trigger-label",
-    ) as HTMLElement | null;
-    if (triggerLabelEl) triggerLabelEl.textContent = config.layout.brandName;
+    syncTitle();
     const logoImg = shadow.querySelector(
       ".ucw-header img",
     ) as HTMLImageElement | null;
@@ -1810,8 +1970,10 @@ export function mountWidget(args: MountArgs): MountedWidget {
   //   2. Floating mode users get history preloaded BEFORE they click
   //      the button — no welcome-to-history flicker.
   // The `state.threadId` guard inside `autoRestoreOnOpen` makes the
-  // later `open()` call a safe no-op.
-  void autoRestoreOnOpen();
+  // later `open()` call a safe no-op. A host-chosen thread replaces the
+  // restore entirely.
+  if (hostThreadId) void openThread(hostThreadId);
+  else void autoRestoreOnOpen();
 
   function destroy() {
     if (destroyed) return;
@@ -1827,6 +1989,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
   }
 
   function sendMessageAsVisitor(text: string) {
+    if (refuseReadOnly("sendMessage")) return;
     textarea.value = text;
     void submit();
   }
@@ -1841,6 +2004,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
     setVars,
     setCollections,
     startConversation,
+    openThread: (threadId) => void openThread(threadId),
+    getThreadId: () => state.threadId,
     applyConfig,
     destroy,
   };

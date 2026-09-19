@@ -36,6 +36,25 @@ const ROUTES = [
 type Skin = "default" | "branded" | "unstyled";
 
 /**
+ * Stands in for the host app's database: the thread ids this demo saw
+ * created, with the visitor who owns each. A real host stores these
+ * server-side against its own user.
+ */
+interface SavedThread {
+  userId: string;
+  threadId: string;
+}
+const SAVED_KEY = "react-ui-demo:saved-threads";
+
+function loadSaved(): SavedThread[] {
+  try {
+    return JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]") as SavedThread[];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * A component a tool can put in the reply. The host owns it entirely — the
  * chat only ever learns its *name* and a JSON object, which is the whole
  * security story: nothing crosses that is executable.
@@ -94,6 +113,37 @@ export function App() {
   const [dark, setDark] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [blocked, setBlocked] = useState(false);
+  const [saved, setSaved] = useState<SavedThread[]>(loadSaved);
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const [viewing, setViewing] = useState<SavedThread | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SAVED_KEY, JSON.stringify(saved));
+    } catch {
+      // Storage disabled: the list just won't survive a reload.
+    }
+  }, [saved]);
+
+  // Titles come from the server — it names a thread after the first reply,
+  // so they are read at display time rather than saved with the id. The
+  // live chat's handle is scoped to the current visitor, so only their
+  // threads resolve.
+  useEffect(() => {
+    let cancelled = false;
+    for (const t of saved) {
+      if (t.userId !== userId || titles[t.threadId]) continue;
+      void chat.current?.getThreadSummary(t.threadId).then((summary) => {
+        if (!cancelled && summary) {
+          setTitles((all) => ({ ...all, [t.threadId]: summary.title }));
+        }
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved, userId]);
 
   const note = (line: string) =>
     setLog((l) => [`${new Date().toLocaleTimeString()}  ${line}`, ...l].slice(0, 60));
@@ -232,6 +282,51 @@ export function App() {
         </section>
 
         <section>
+          <h2>Saved conversations</h2>
+          <p className="hint">
+            <code>onThreadChange</code> with reason <code>created</code> saves
+            each new thread id here (localStorage, standing in for your
+            database). Open one to see it read-only beside the live chat — the
+            viewer passes the thread owner's <code>userId</code>, and never
+            moves the live chat's own saved thread.
+          </p>
+          {saved.length === 0 ? (
+            <p className="hint">None yet — send a message.</p>
+          ) : (
+            <ul className="saved">
+              {saved.map((t) => (
+                <li key={t.threadId}>
+                  <button
+                    className={viewing?.threadId === t.threadId ? "on" : undefined}
+                    onClick={() => {
+                      setViewing(t);
+                      note(`viewing ${t.threadId} read-only`);
+                    }}
+                  >
+                    {titles[t.threadId] ?? t.threadId.slice(0, 8) + "…"}
+                  </button>
+                  <span className="hint">{t.userId}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="row">
+            <button onClick={() => setSaved([])} disabled={saved.length === 0}>
+              forget all
+            </button>
+            <button
+              onClick={() => {
+                const id = crypto.randomUUID();
+                setViewing({ userId, threadId: id });
+                note(`viewing ${id} — not this visitor's, expect "unavailable"`);
+              }}
+            >
+              open a foreign id
+            </button>
+          </div>
+        </section>
+
+        <section>
           <h2>Other actions</h2>
           <div className="row">
             <button onClick={() => chat.current?.sendMessage("What can you do?")}>
@@ -270,6 +365,7 @@ export function App() {
             </span>
           </div>
         )}
+        <div className="frames">
         <div className="frame">
           <UraiChat
             ref={chat}
@@ -282,6 +378,12 @@ export function App() {
             onUserMessage={(c) => note(`user-message: ${c.slice(0, 60)}`)}
             onAssistantReply={(c) => note(`assistant-reply: ${c.length} chars`)}
             displayComponents={DISPLAY_COMPONENTS}
+            onThreadChange={(threadId, { reason }) => {
+              note(`thread-change: ${threadId ?? "null"} (${reason})`);
+              if (reason === "created" && threadId) {
+                setSaved((all) => [{ userId, threadId }, ...all]);
+              }
+            }}
             onCommand={(c) => note(`command: ${JSON.stringify(c)}`)}
             onError={(e) => {
               note(`error: ${e}`);
@@ -291,6 +393,29 @@ export function App() {
               if (/403|origin/i.test(e)) setBlocked(true);
             }}
           />
+        </div>
+        {viewing && (
+          <div className="frame viewer">
+            <div className="viewer-bar">
+              <span>
+                Read-only · <code>{viewing.threadId.slice(0, 8)}…</code> as{" "}
+                <code>{viewing.userId}</code>
+              </span>
+              <button onClick={() => setViewing(null)}>close</button>
+            </div>
+            <UraiChat
+              baseUrl={BASE_URL}
+              widgetToken={WIDGET_TOKEN}
+              userId={viewing.userId}
+              // Changing it loads the next thread in place — clicking
+              // another saved conversation does not remount the viewer.
+              threadId={viewing.threadId}
+              readOnly
+              displayComponents={DISPLAY_COMPONENTS}
+              onError={(e) => note(`viewer error: ${e}`)}
+            />
+          </div>
+        )}
         </div>
       </main>
     </div>

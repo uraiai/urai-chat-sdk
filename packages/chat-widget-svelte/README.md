@@ -32,10 +32,24 @@ npm install @uraiai/chat-widget-svelte
 
 Required: `widgetToken`, `userId`.
 Optional: `baseUrl` (defaults to `https://chat.app.urai.dev`; set it for
-self-hosted deployments), `vars`, `theme`, `layout`, `behavior`,
-`displayComponents`, `mode` (`"floating"` default | `"inline"`), and callback props `onready`,
-`onopened`, `onclosed`, `onusermessage`, `onassistantreply`, `oncommand`,
+self-hosted deployments), `vars`, `collections`, `theme`, `layout`, `behavior`,
+`displayComponents`, `mode` (`"floating"` default | `"inline"`), `threadId`,
+`readOnly`, and callback props `onready`, `onopened`, `onclosed`,
+`onusermessage`, `onassistantreply`, `oncommand`, `onthreadchange`,
 `onerror`.
+
+`onthreadchange(threadId, { previousThreadId, reason })` fires whenever the
+conversation moves to another thread. Save `threadId` when `reason` is
+`"created"`, then show a saved conversation with `threadId` and `readOnly`:
+
+```svelte
+<UraiChatWidget widgetToken="…" userId={user.id} mode="inline" threadId={selectedThreadId} readOnly />
+```
+
+`readOnly` shows the transcript only (no composer or switcher) and writes
+nothing. `userId` must be the visitor who owns the thread. See "Saving and
+showing past conversations" in `@uraiai/chat-widget-core` for the details,
+including who should be allowed to view what.
 
 `oncommand` fires when a uraiJS tool calls
 `meta.urai.sendCommand(meta.vars.thread_id, payload)` during the turn —
@@ -81,11 +95,12 @@ size it via the parent element.
 | `userId` | `setUser()` — resets the conversation for the new visitor. |
 | `vars` | `setVars()` — updates the current/next thread's context. |
 | `collections` | `setCollections()` — knowledge collection **ids** scoping the conversation, on top of the assistant's own. |
-| `widgetToken`, `baseUrl`, `mode` | Destroys and recreates the widget. |
+| `threadId` | `openThread()` — opens the new thread in place. |
+| `widgetToken`, `baseUrl`, `mode`, `readOnly` | Destroys and recreates the widget. |
 
 `bind:this` gives you the component instance; call `getController()` on it
 for the full `WidgetController` (`open`, `close`, `sendMessage`,
-`startConversation`, `on`, …). It returns `null` until mounted.
+`startConversation`, `openThread`, `getThreadId`, `getThreadSummary`, `on`, …). It returns `null` until mounted.
 
 ## Passing context (vars)
 

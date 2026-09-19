@@ -129,6 +129,22 @@ export interface ChatState {
 
   threadId: string | null;
   /**
+   * The transcript only: sending, uploads and resets are refused, and the
+   * visitor's saved thread is never read or written. Fixed at construction.
+   */
+  readOnly: boolean;
+  /**
+   * Metadata for a thread the host opened (`threadId` / `openThread`) —
+   * title, timestamps. `null` otherwise, or when the server predates the
+   * metadata route.
+   */
+  thread: ThreadSummary | null;
+  /**
+   * Progress of the last host-requested open. `not-found` is the server's
+   * 404 — the thread does not exist, or belongs to another visitor.
+   */
+  threadLoad: "idle" | "loading" | "not-found" | "failed";
+  /**
    * Set by user-initiated reset paths. Read **only** by thread
    * auto-restore, to stop it snapping back to the previous conversation.
    * It does not gate `force_new` on create — that is always true.

@@ -14,6 +14,7 @@ import {
   useMessages,
   useStickToBottom,
   useStream,
+  useThread,
   useThreadArchive,
   useThreads,
 } from "./hooks";
@@ -27,10 +28,12 @@ import {
 export function Header() {
   const { components, labels, idPrefix } = usePresentation();
   const config = useChatConfig();
+  const thread = useThread();
   const Slot = components.Header;
   return (
     <Slot
-      title={labels.brandName}
+      // A read-only view is about one conversation, so it names it.
+      title={(thread.readOnly && thread.summary?.title) || labels.brandName}
       logoUrl={config.layout.brandLogoUrl}
       logo={
         config.layout.brandLogoUrl ? (
@@ -64,6 +67,9 @@ export function ThreadTrigger() {
   const Icon = useIcons().chevron;
   const [open, setOpen] = useState(false);
   const threads = useThreads();
+  const { readOnly } = useThread();
+  // The switcher navigates away from the thread the host asked to show.
+  if (readOnly) return null;
   return (
     <>
       <button
@@ -309,11 +315,26 @@ export function EmptyState() {
   const config = useChatConfig();
   const actions = useChatActions();
   const { isEmpty } = useChatStatus();
+  const thread = useThread();
   if (!isEmpty) return null;
 
   const Slot = components.EmptyState;
   const Suggestions = components.SuggestedQuestions;
   const questions = config.behavior.suggestedQuestions ?? [];
+
+  const notice =
+    thread.load === "loading"
+      ? labels.loadingConversation
+      : thread.load === "not-found"
+        ? labels.conversationUnavailable
+        : thread.load === "failed"
+          ? labels.conversationLoadFailed
+          : null;
+  // A welcome and starter questions invite a message a read-only view
+  // cannot send.
+  if (notice || thread.readOnly) {
+    return <Slot welcomeMessage="" suggestions={null} notice={notice} />;
+  }
 
   return (
     <Slot
@@ -365,6 +386,8 @@ export function Composer() {
   const composer = useComposer();
   const attachments = useAttachments();
   const { labels } = usePresentation();
+  const { readOnly } = useThread();
+  if (readOnly) return null;
 
   const Slot = components.Composer;
   const Input = components.ComposerInput;

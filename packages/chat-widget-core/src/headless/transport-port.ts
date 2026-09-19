@@ -25,6 +25,7 @@ export interface ChatTransport {
   fetchConfig(): Promise<ServerConfig>;
 
   listThreads(): Promise<ThreadSummary[]>;
+  getThread(threadId: string): Promise<ThreadSummary>;
   createOrResumeThread(body?: {
     force_new?: boolean;
     title?: string;

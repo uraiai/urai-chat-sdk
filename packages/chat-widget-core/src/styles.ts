@@ -102,6 +102,10 @@ export const baseStyles = `
 }
 .ucw-header img { width: 24px; height: 24px; border-radius: 6px; }
 .ucw-header .ucw-title { flex: 1; }
+/* Read-only header: a plain title, which a thread's name can overflow. */
+.ucw-header span.ucw-title {
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .ucw-header button {
   border: none; background: transparent; color: inherit; cursor: pointer;
   padding: 4px; border-radius: 6px; opacity: 0.85;
@@ -150,6 +154,12 @@ export const baseStyles = `
   background: var(--ucw-asst-bg);
   color: var(--ucw-asst-text);
   border-bottom-left-radius: 4px;
+}
+.ucw-notice {
+  align-self: center;
+  color: var(--ucw-muted);
+  font-size: 13px;
+  text-align: center;
 }
 .ucw-bubble.ucw-error {
   align-self: stretch;

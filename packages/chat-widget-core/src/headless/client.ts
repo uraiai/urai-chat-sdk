@@ -31,6 +31,19 @@ export interface ChatClientOptions {
    * collections out of reach.
    */
   collections?: string[] | null;
+  /**
+   * Open this thread instead of the visitor's last one — typically an id the
+   * host saved from a `thread-change` event. It must belong to `userId`: the
+   * server answers another visitor's thread with a 404.
+   */
+  threadId?: string | null;
+  /**
+   * Show the transcript only. Sending, uploads and "New conversation" are
+   * refused, vars and collections are never written to the thread, and the
+   * visitor's saved thread in `localStorage` is left alone — so viewing an
+   * old conversation cannot move the visitor's live chat.
+   */
+  readOnly?: boolean;
   theme?: ConfigOverrides["theme"];
   layout?: ConfigOverrides["layout"];
   behavior?: ConfigOverrides["behavior"];
@@ -99,6 +112,8 @@ export function createChatClient(options: ChatClientOptions): ChatClient {
     userId: options.userId,
     vars: options.vars ?? null,
     collections: options.collections ?? null,
+    threadId: options.threadId ?? null,
+    readOnly: options.readOnly,
     emit,
     batch: options.batch,
     session: createSessionStore({

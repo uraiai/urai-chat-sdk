@@ -4,6 +4,7 @@
     createUraiChatWidget,
     type ComponentRenderers,
     type ConfigOverrides,
+    type ThreadChangeReason,
     type WidgetBehavior,
     type WidgetController,
     type WidgetLayout,
@@ -24,6 +25,17 @@
      * organization's other collections out of reach.
      */
     collections?: string[] | null;
+    /**
+     * Open this thread instead of the visitor's last one — an id saved from
+     * `onthreadchange`. Applies live: changing it opens the new thread in
+     * place. Pair with `readOnly` for a past-conversation viewer.
+     */
+    threadId?: string | null;
+    /**
+     * Transcript only: no composer, switcher or welcome, and nothing is
+     * written. Best with `mode="inline"`. Changing it remounts the widget.
+     */
+    readOnly?: boolean;
     theme?: Partial<WidgetTheme>;
     layout?: Partial<WidgetLayout>;
     behavior?: Partial<WidgetBehavior>;
@@ -51,6 +63,14 @@
      */
     oncommand?: (command: unknown) => void;
     onerror?: (error: string) => void;
+    /**
+     * The conversation moved to another thread, or to none. Save `threadId`
+     * when `info.reason` is `"created"` to list the visitor's conversations.
+     */
+    onthreadchange?: (
+      threadId: string | null,
+      info: { previousThreadId: string | null; reason: ThreadChangeReason },
+    ) => void;
   }
 
   let {
@@ -59,6 +79,8 @@
     baseUrl = undefined,
     vars = null,
     collections = null,
+    threadId = null,
+    readOnly = false,
     theme = undefined,
     layout = undefined,
     behavior = undefined,
@@ -71,6 +93,7 @@
     onassistantreply,
     oncommand,
     onerror,
+    onthreadchange,
   }: Props = $props();
 
   let containerEl: HTMLDivElement | null = $state(null);
@@ -79,19 +102,21 @@
   let lastUserId = "";
   let lastVars = "";
   let lastCollections = "";
+  let lastThreadId: string | null = null;
 
   /** Access the live controller via `bind:this` on the component. */
   export function getController(): WidgetController | null {
     return controller;
   }
 
-  // Transport identity and mount topology are constructor-time: this
+  // Transport identity, mount topology and read-only are constructor-time: this
   // effect re-runs (destroy + recreate) when they change. All other
   // props are read inside untrack() so changing them does NOT remount —
   // the live-update effects below handle those.
   $effect(() => {
     const token = widgetToken;
     const base = baseUrl;
+    const ro = readOnly;
     const container = mode === "inline" ? (containerEl ?? undefined) : undefined;
     if (mode === "inline" && !container) return;
 
@@ -102,6 +127,8 @@
         userId,
         vars,
         collections,
+        threadId,
+        readOnly: ro,
         theme,
         layout,
         behavior,
@@ -115,6 +142,7 @@
       lastUserId = userId;
       lastVars = JSON.stringify(vars ?? null);
       lastCollections = JSON.stringify(collections ?? null);
+      lastThreadId = threadId ?? null;
     });
 
     const subscriptions = [
@@ -133,6 +161,14 @@
       c.on("error", (e) => {
         if (e.type === "error") onerror?.(e.error);
       }),
+      c.on("thread-change", (e) => {
+        if (e.type === "thread-change") {
+          onthreadchange?.(e.threadId, {
+            previousThreadId: e.previousThreadId,
+            reason: e.reason,
+          });
+        }
+      }),
     ];
 
     return () => {
@@ -150,6 +186,14 @@
     if (!controller || json === lastOverrides) return;
     lastOverrides = json;
     controller.configure(JSON.parse(json) as ConfigOverrides);
+  });
+
+  // A new threadId opens in place; the widget opens its first one itself.
+  $effect(() => {
+    const id = threadId ?? null;
+    if (!controller || id === lastThreadId) return;
+    lastThreadId = id;
+    controller.openThread(id);
   });
 
   $effect(() => {

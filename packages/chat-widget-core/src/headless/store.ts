@@ -16,8 +16,8 @@
  *    so a memoized message row cannot re-render per token.
  */
 import type { ResolvedConfig } from "../config";
-import type { ThreadArchive, WidgetAttachment } from "../transport";
-import type { WidgetEvent } from "../events";
+import type { ThreadArchive, ThreadSummary, WidgetAttachment } from "../transport";
+import type { ThreadChangeReason, WidgetEvent } from "../events";
 import { createReasoning } from "./reasoning";
 import { createToolActivity } from "./tool-activity";
 import { hydrateHistory, commitStream } from "./messages";
@@ -39,6 +39,10 @@ export interface ChatStoreDeps {
   userId: string;
   vars?: WidgetVars | null;
   collections?: string[] | null;
+  /** Open this thread on `start()` instead of auto-restoring. */
+  threadId?: string | null;
+  /** See `ChatState.readOnly`. */
+  readOnly?: boolean;
   session?: SessionStore;
   emit?: (event: WidgetEvent) => void;
   /**
@@ -65,6 +69,19 @@ export interface ChatActions {
   loadThreads(): Promise<void>;
   setThreadQuery(query: string): void;
   selectThread(threadId: string): Promise<void>;
+  /**
+   * Show a thread the host chose — one it saved from a `thread-change`
+   * event. Clears the transcript, loads the history and the thread's
+   * metadata, and emits `thread-change` with reason `opened`. A thread that
+   * is not this visitor's comes back as `threadLoad: "not-found"` plus an
+   * `error` event. `null` clears the conversation.
+   */
+  openThread(threadId: string | null): Promise<void>;
+  /**
+   * A thread's title and timestamps, for a host listing saved threads.
+   * `null` when it is not this visitor's, or on failure.
+   */
+  fetchThreadSummary(threadId: string): Promise<ThreadSummary | null>;
   newConversation(opts?: NewConversationArg): void;
 
   /**
@@ -141,6 +158,9 @@ function initialState(deps: ChatStoreDeps): ChatState {
     vars: deps.vars ?? null,
     collections: deps.collections ?? null,
     threadId: null,
+    readOnly: !!deps.readOnly,
+    thread: null,
+    threadLoad: "idle",
     forceNewOnNextCreate: false,
     messages: [],
     stream: null,
@@ -153,8 +173,21 @@ function initialState(deps: ChatStoreDeps): ChatState {
   };
 }
 
+/**
+ * The HTTP status a transport error carries (`WidgetHttpError`), read
+ * structurally: `instanceof` fails when two bundles each hold a copy of the
+ * class, as a host's bundler can arrange.
+ */
+function httpStatus(error: unknown): number | null {
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === "number" ? status : null;
+}
+
 export function createChatStore(deps: ChatStoreDeps): ChatStore {
-  const session = deps.session ?? createNullSessionStore();
+  // Read-only never touches the visitor's saved thread: viewing an old
+  // conversation must not move the one their live chat resumes.
+  const session =
+    (!deps.readOnly && deps.session) || createNullSessionStore();
   const emit = deps.emit ?? (() => {});
   const batch =
     deps.batch ??
@@ -175,6 +208,16 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
   let localIdSeq = 0;
   const inflightUploads = new Set<Promise<void>>();
   let localMessageSeq = 0;
+  /** Bumped per `openThread`, so a slower earlier open cannot land last. */
+  let openSeq = 0;
+  /**
+   * A host-requested thread not yet opened. `start()` opens it instead of
+   * auto-restoring, and a StrictMode stop → start re-issues it.
+   */
+  let pendingOpen: string | null = deps.threadId || null;
+  /** The host's latest `openThread` argument; a read-only view reopens it for a new visitor. */
+  let hostThreadId: string | null = deps.threadId || null;
+  const readOnlyWarned = new Set<string>();
 
   function notify() {
     for (const l of [...listeners]) l();
@@ -211,6 +254,32 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
   }
 
   const nextLocalId = () => `local:${++localMessageSeq}`;
+
+  /**
+   * The only place `threadId` changes. Emitting here rather than at each
+   * call site is what keeps `thread-change` from missing a path.
+   */
+  function setThread(
+    threadId: string | null,
+    reason: ThreadChangeReason,
+    patch: Partial<ChatState> = {},
+  ) {
+    const previousThreadId = state.threadId;
+    set({ ...patch, threadId });
+    if (previousThreadId !== threadId) {
+      emit({ type: "thread-change", threadId, previousThreadId, reason });
+    }
+  }
+
+  /** True (and a one-time warning) when a write is refused in read-only mode. */
+  function refuseReadOnly(action: string): boolean {
+    if (!state.readOnly) return false;
+    if (!readOnlyWarned.has(action)) {
+      readOnlyWarned.add(action);
+      console.warn(`[UraiChat] ${action}() ignored: the chat is read-only`);
+    }
+    return true;
+  }
 
   function pushMessage(message: ChatMessage) {
     set({ messages: [...state.messages, message] });
@@ -260,18 +329,22 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
     // nulls `threadId` without clearing storage from silently resuming.
     const cached = state.forceNewOnNextCreate ? null : session.load();
     if (cached) {
-      set({ threadId: cached });
+      // Validated before it becomes the thread, so a stale id never
+      // surfaces as a `thread-change` for a thread that is not there.
       try {
         const msgs = await deps.transport.listMessages(cached);
         if (g !== gen) return cached;
-        if (msgs.length > 0) set({ messages: hydrateHistory(msgs) });
+        setThread(
+          cached,
+          "restored",
+          msgs.length > 0 ? { messages: hydrateHistory(msgs) } : {},
+        );
+        return cached;
       } catch {
         // Stale cache (e.g. the server rotated tokens) — drop and
         // start fresh rather than stranding the visitor.
         session.clear();
-        set({ threadId: null });
       }
-      if (state.threadId) return state.threadId;
     }
 
     const body: {
@@ -282,7 +355,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
     if (state.vars) body.vars = state.vars;
     if (state.collections) body.collections = state.collections;
     const result = await deps.transport.createOrResumeThread(body);
-    set({ threadId: result.thread_id, forceNewOnNextCreate: false });
+    setThread(result.thread_id, "created", { forceNewOnNextCreate: false });
     session.save(result.thread_id);
     return result.thread_id;
   }
@@ -299,10 +372,89 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
     try {
       const msgs = await deps.transport.listMessages(cached);
       if (g !== gen) return;
-      set({ threadId: cached, messages: hydrateHistory(msgs) });
+      setThread(cached, "restored", { messages: hydrateHistory(msgs) });
     } catch {
       session.clear();
     }
+  }
+
+  async function openThread(threadId: string | null): Promise<void> {
+    hostThreadId = threadId;
+    pendingOpen = threadId;
+    const seq = ++openSeq;
+    const g = gen;
+
+    if (!threadId) {
+      pendingOpen = null;
+      stopStream();
+      // Like "New conversation": forget the saved thread so the next send
+      // creates rather than resumes one the host just moved away from.
+      if (!state.readOnly) session.clear();
+      setThread(null, "opened", {
+        messages: [],
+        stream: null,
+        status: "idle",
+        attachments: [],
+        error: null,
+        thread: null,
+        threadLoad: "idle",
+        forceNewOnNextCreate: !state.readOnly,
+      });
+      return;
+    }
+    if (!deps.transport) return;
+    if (threadId === state.threadId && state.threadLoad === "idle") {
+      pendingOpen = null;
+      return;
+    }
+
+    stopStream();
+    set({
+      messages: [],
+      stream: null,
+      status: "idle",
+      thread: null,
+      threadLoad: "loading",
+      error: null,
+    });
+
+    const [history, summary] = await Promise.all([
+      deps.transport.listMessages(threadId).then(
+        (msgs) => ({ ok: true as const, msgs }),
+        (error: unknown) => ({ ok: false as const, error }),
+      ),
+      // Metadata only dresses the view. A failure — or a server older
+      // than the route — must not stop the transcript from showing.
+      deps.transport.getThread(threadId).catch(() => null),
+    ]);
+    if (seq !== openSeq || g !== gen) return;
+    pendingOpen = null;
+
+    if (!history.ok) {
+      const notFound = httpStatus(history.error) === 404;
+      if (!state.readOnly) session.clear();
+      setThread(null, "opened", {
+        threadLoad: notFound ? "not-found" : "failed",
+        // The host asked for a specific thread; a send now must start a
+        // new one, not resume whatever the visitor had saved before.
+        forceNewOnNextCreate: !state.readOnly,
+      });
+      const msg =
+        history.error instanceof Error ? history.error.message : String(history.error);
+      emit({
+        type: "error",
+        error: notFound ? `thread ${threadId} not found` : msg,
+      });
+      return;
+    }
+
+    setThread(threadId, "opened", {
+      messages: hydrateHistory(history.msgs),
+      thread: summary,
+      threadLoad: "idle",
+      forceNewOnNextCreate: false,
+    });
+    session.save(threadId);
   }
 
   // ---------------------------------------------------------------
@@ -456,7 +608,10 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
 
   async function send(explicitText?: string): Promise<void> {
     const g = gen;
-    if (state.status !== "idle") return;
+    if (refuseReadOnly("send")) return;
+    // A host-requested thread is still loading: a send now would land in
+    // whichever thread was open before it.
+    if (state.status !== "idle" || state.threadLoad === "loading") return;
     const text = (explicitText ?? state.draft).trim();
     const hasPending = state.attachments.length > 0;
     if (!text && !hasPending) return;
@@ -574,7 +729,8 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
     async start() {
       if (started) return;
       started = true;
-      await autoRestore(gen);
+      if (pendingOpen) await openThread(pendingOpen);
+      else await autoRestore(gen);
     },
 
     stop() {
@@ -593,6 +749,9 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       // Same for a zip fetch: its continuation now bails, so nothing else
       // would clear the busy state.
       if (state.archive !== "idle") set({ archive: "idle" });
+      // And an open in flight — `pendingOpen` still holds it, so the next
+      // `start()` issues it again.
+      if (state.threadLoad === "loading") set({ threadLoad: "idle" });
     },
 
     setDraft(text) {
@@ -602,6 +761,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
     send,
 
     addFiles(files) {
+      if (refuseReadOnly("addFiles")) return;
       const g = gen;
       for (const file of Array.from(files)) {
         const p = upload(g, file).finally(() => inflightUploads.delete(p));
@@ -686,7 +846,14 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       if (!deps.transport || state.threadId === threadId) return;
       const g = gen;
       stopStream();
-      set({ threadId, messages: [], stream: null, status: "idle" });
+      pendingOpen = null;
+      setThread(threadId, "selected", {
+        messages: [],
+        stream: null,
+        status: "idle",
+        thread: null,
+        threadLoad: "idle",
+      });
       session.save(threadId);
       try {
         const msgs = await deps.transport.listMessages(threadId);
@@ -698,9 +865,23 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       }
     },
 
+    openThread,
+
+    async fetchThreadSummary(threadId) {
+      if (!deps.transport) return null;
+      try {
+        return await deps.transport.getThread(threadId);
+      } catch (e) {
+        console.warn("[UraiChat] thread fetch failed:", e);
+        return null;
+      }
+    },
+
     newConversation(arg) {
+      if (refuseReadOnly("newConversation")) return;
       const opts = asNewConversationOptions(arg);
       stopStream();
+      pendingOpen = null;
       // Forget the persisted thread. Without this the id outlives the
       // reset and the next send resumes the conversation the visitor
       // just asked to leave — `ensureThread` consults storage before it
@@ -708,11 +889,12 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       session.clear();
       if (opts.vars !== undefined) set({ vars: opts.vars });
       if (opts.collections !== undefined) set({ collections: opts.collections });
-      set({
-        threadId: null,
+      setThread(null, "reset", {
         // Tell the next create to actually create. Also stops
         // auto-restore from snapping back to the old conversation.
         forceNewOnNextCreate: true,
+        thread: null,
+        threadLoad: "idle",
         status: "idle",
         // The new thread has no server row until a message is sent, so
         // invalidate the list rather than showing a stale one.
@@ -729,9 +911,11 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       if (userChanged) {
         stopStream();
         deps.transport?.setWidgetUserId(id);
-        set({
+        pendingOpen = null;
+        setThread(null, "user-changed", {
           userId: id,
-          threadId: null,
+          thread: null,
+          threadLoad: "idle",
           // A new visitor is a fresh slate, so clear any pending
           // "new conversation" intent and let their threads restore.
           forceNewOnNextCreate: false,
@@ -743,10 +927,15 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
           error: null,
         });
       }
+      // A read-only view shows one thread of one visitor; the host changing
+      // the visitor keeps showing the thread it asked for, now under them.
+      if (userChanged && state.readOnly && hostThreadId) {
+        void openThread(hostThreadId);
+      }
       // `undefined` means leave alone; explicit `null` clears.
       if (vars !== undefined) {
         set({ vars });
-        if (!userChanged && deps.transport && state.threadId) {
+        if (!userChanged && !state.readOnly && deps.transport && state.threadId) {
           void deps.transport
             .updateThreadVars(state.threadId, vars)
             .catch((e) => console.warn("[UraiChat] setUser vars patch:", e));
@@ -756,7 +945,8 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
 
     setVars(vars) {
       set({ vars });
-      if (deps.transport && state.threadId) {
+      // Read-only never writes to the thread it is showing.
+      if (!state.readOnly && deps.transport && state.threadId) {
         void deps.transport
           .updateThreadVars(state.threadId, vars)
           .catch((e) => console.warn("[UraiChat] setVars patch:", e));
@@ -765,7 +955,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
 
     setCollections(collections) {
       set({ collections });
-      if (deps.transport && state.threadId) {
+      if (!state.readOnly && deps.transport && state.threadId) {
         void deps.transport
           .updateThreadCollections(state.threadId, collections)
           .catch((e) => console.warn("[UraiChat] setCollections patch:", e));

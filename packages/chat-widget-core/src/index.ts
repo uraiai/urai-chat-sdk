@@ -8,6 +8,7 @@ export {
 export { saveBlob } from "./download";
 
 export type {
+  ThreadChangeReason,
   WidgetEvent,
   WidgetEventName,
   WidgetEventListener,
@@ -49,3 +50,4 @@ export type {
   ThreadArchive,
   WorkspaceFile,
 } from "./transport";
+export { WidgetHttpError } from "./transport";

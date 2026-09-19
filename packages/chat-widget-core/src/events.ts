@@ -2,6 +2,27 @@
 // listener map (one widget per page); the SDK supports multiple widget
 // instances, so each controller owns its own Emitter.
 
+/**
+ * Why the conversation's thread id changed. `created` is the one a host
+ * saving conversations acts on: a new server thread now exists.
+ *
+ * - `created` — the first message of a new conversation created a thread
+ * - `restored` — the visitor's last thread was reloaded from storage
+ * - `selected` — the visitor picked a thread in the switcher
+ * - `opened` — the host asked for a thread (`threadId` / `openThread`); a
+ *   `null` id here means the host cleared it or the thread could not be
+ *   opened (an `error` event says which)
+ * - `reset` — "New conversation"; the id is `null` until the next send
+ * - `user-changed` — `setUser` switched visitor; the id is `null`
+ */
+export type ThreadChangeReason =
+  | "created"
+  | "restored"
+  | "selected"
+  | "opened"
+  | "reset"
+  | "user-changed";
+
 export type WidgetEvent =
   | { type: "ready" }
   | { type: "opened" }
@@ -16,6 +37,17 @@ export type WidgetEvent =
    * (e.g. multiple tabs) receives its own copy.
    */
   | { type: "command"; command: unknown }
+  /**
+   * The conversation moved to another thread, or to none. Fires only on a
+   * real change. On `created` the id is known before the first message is
+   * sent, so a host can save it even if that send then fails.
+   */
+  | {
+      type: "thread-change";
+      threadId: string | null;
+      previousThreadId: string | null;
+      reason: ThreadChangeReason;
+    }
   | { type: "error"; error: string }
   | { type: "destroyed" };
 

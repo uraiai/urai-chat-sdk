@@ -100,8 +100,11 @@ export {
   useMessages,
   useStickToBottom,
   useStream,
+  useThread,
   useThreadArchive,
+  useThreadId,
   useThreads,
+  type UseThreadResult,
 } from "./hooks";
 
 // Slots: every default is exported so wrapping is a one-liner.

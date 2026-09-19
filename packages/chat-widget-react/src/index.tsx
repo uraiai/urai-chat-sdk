@@ -2,6 +2,7 @@ import {
   createUraiChatWidget,
   type ComponentRenderers,
   type ConfigOverrides,
+  type ThreadChangeReason,
   type WidgetBehavior,
   type WidgetController,
   type WidgetEventListener,
@@ -23,6 +24,8 @@ export type {
   ComponentRenderer,
   ComponentRenderers,
   ConfigOverrides,
+  ThreadChangeReason,
+  ThreadSummary,
   WidgetBehavior,
   WidgetController,
   WidgetLayout,
@@ -43,6 +46,17 @@ export interface UraiChatWidgetProps {
    * collections out of reach.
    */
   collections?: string[] | null;
+  /**
+   * Open this thread instead of the visitor's last one — an id saved from
+   * `onThreadChange`. Applies live: changing it opens the new thread in
+   * place. Pair with `readOnly` for a past-conversation viewer.
+   */
+  threadId?: string | null;
+  /**
+   * Transcript only: no composer, switcher or welcome, and nothing is
+   * written. Best with `mode="inline"`. Changing it remounts the widget.
+   */
+  readOnly?: boolean;
   theme?: Partial<WidgetTheme>;
   layout?: Partial<WidgetLayout>;
   behavior?: Partial<WidgetBehavior>;
@@ -73,6 +87,15 @@ export interface UraiChatWidgetProps {
    */
   onCommand?: (command: unknown) => void;
   onError?: (error: string) => void;
+  /**
+   * The conversation moved to another thread, or to none. Save `threadId`
+   * when `reason` is `"created"` to list the visitor's conversations in
+   * your own app.
+   */
+  onThreadChange?: (
+    threadId: string | null,
+    info: { previousThreadId: string | null; reason: ThreadChangeReason },
+  ) => void;
 }
 
 function overridesOf(props: UraiChatWidgetProps): ConfigOverrides {
@@ -81,7 +104,16 @@ function overridesOf(props: UraiChatWidgetProps): ConfigOverrides {
 
 export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
   function UraiChatWidget(props, ref) {
-    const { widgetToken, baseUrl, userId, vars, collections, mode = "floating" } = props;
+    const {
+      widgetToken,
+      baseUrl,
+      userId,
+      vars,
+      collections,
+      threadId,
+      readOnly = false,
+      mode = "floating",
+    } = props;
 
     const containerRef = useRef<HTMLDivElement | null>(null);
     const controllerRef = useRef<WidgetController | null>(null);
@@ -94,6 +126,7 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
     const lastUserIdRef = useRef("");
     const lastVarsRef = useRef("");
     const lastCollectionsRef = useRef("");
+    const lastThreadIdRef = useRef<string | null>(null);
 
     useEffect(() => {
       const p = propsRef.current;
@@ -107,6 +140,8 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
         userId: p.userId,
         vars: p.vars,
         collections: p.collections,
+        threadId: p.threadId,
+        readOnly,
         theme: p.theme,
         layout: p.layout,
         behavior: p.behavior,
@@ -118,6 +153,7 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
       lastUserIdRef.current = p.userId;
       lastVarsRef.current = JSON.stringify(p.vars ?? null);
       lastCollectionsRef.current = JSON.stringify(p.collections ?? null);
+      lastThreadIdRef.current = p.threadId ?? null;
 
       const c = () => propsRef.current;
       const subscriptions = [
@@ -136,6 +172,14 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
         controller.on("error", (e) => {
           if (e.type === "error") c().onError?.(e.error);
         }),
+        controller.on("thread-change", (e) => {
+          if (e.type === "thread-change") {
+            c().onThreadChange?.(e.threadId, {
+              previousThreadId: e.previousThreadId,
+              reason: e.reason,
+            });
+          }
+        }),
       ];
 
       return () => {
@@ -143,7 +187,7 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
         controller.destroy();
         if (controllerRef.current === controller) controllerRef.current = null;
       };
-    }, [widgetToken, baseUrl, mode]);
+    }, [widgetToken, baseUrl, mode, readOnly]);
 
     // theme/layout/behavior apply live via configure(); deep-compare so
     // fresh object literals on every render don't trigger a config
@@ -171,6 +215,16 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
       controller.setVars(JSON.parse(varsJson) as WidgetVars | null);
     }, [varsJson]);
 
+    // A new threadId opens in place; the one the widget was built with it
+    // opens itself at mount.
+    useEffect(() => {
+      const controller = controllerRef.current;
+      const next = threadId ?? null;
+      if (!controller || next === lastThreadIdRef.current) return;
+      lastThreadIdRef.current = next;
+      controller.openThread(next);
+    }, [threadId]);
+
     // Serialized for the same reason as vars: a fresh array literal on every
     // parent render would otherwise PATCH the server on every render.
     const collectionsJson = JSON.stringify(collections ?? null);
@@ -196,6 +250,10 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
         setVars: (v) => controllerRef.current?.setVars(v),
         setCollections: (c) => controllerRef.current?.setCollections(c),
         startConversation: (o) => controllerRef.current?.startConversation(o),
+        openThread: (id) => controllerRef.current?.openThread(id),
+        getThreadId: () => controllerRef.current?.getThreadId() ?? null,
+        getThreadSummary: (id) =>
+          controllerRef.current?.getThreadSummary(id) ?? Promise.resolve(null),
         configure: (overrides) => controllerRef.current?.configure(overrides),
         on: (event: WidgetEventName, listener: WidgetEventListener) =>
           controllerRef.current?.on(event, listener) ?? (() => {}),

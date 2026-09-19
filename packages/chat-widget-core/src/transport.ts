@@ -163,6 +163,20 @@ export interface CreateThreadResult {
   created: boolean;
 }
 
+/**
+ * A non-2xx widget API response. `status` is what lets a caller tell "this
+ * thread is not yours / does not exist" (404) from a transient failure.
+ */
+export class WidgetHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "WidgetHttpError";
+  }
+}
+
 export class Transport {
   constructor(private opts: TransportOptions) {
     this.opts = { ...opts, baseUrl: opts.baseUrl.replace(/\/+$/, "") };
@@ -265,11 +279,28 @@ export class Transport {
     }
   }
 
+  /**
+   * One thread's metadata, in the shape `listThreads` returns. Scoped to
+   * this visitor server-side: another visitor's thread is a 404, the same
+   * as one that does not exist.
+   */
+  async getThread(threadId: string): Promise<ThreadSummary> {
+    const res = await fetch(this.url(`/threads/${threadId}`), {
+      headers: this.headers(),
+    });
+    if (!res.ok) {
+      throw new WidgetHttpError(`get thread failed: ${res.status}`, res.status);
+    }
+    return res.json();
+  }
+
   async listMessages(threadId: string): Promise<ServerMessage[]> {
     const res = await fetch(this.url(`/threads/${threadId}/messages`), {
       headers: this.headers(),
     });
-    if (!res.ok) throw new Error(`list messages failed: ${res.status}`);
+    if (!res.ok) {
+      throw new WidgetHttpError(`list messages failed: ${res.status}`, res.status);
+    }
     return res.json();
   }
 

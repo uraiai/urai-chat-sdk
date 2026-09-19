@@ -21,11 +21,12 @@ import {
 import { themeToStyle } from "@uraiai/chat-widget-core/theme";
 import type {
   ConfigOverrides,
+  ThreadChangeReason,
   WidgetEvent,
   WidgetEventListener,
   WidgetEventName,
 } from "@uraiai/chat-widget-core";
-import type { ChatState } from "@uraiai/chat-widget-core/headless";
+import type { ChatState, ThreadSummary } from "@uraiai/chat-widget-core/headless";
 import {
   ChatStoreProvider,
   PresentationProvider,
@@ -68,6 +69,12 @@ export interface UraiChatHandle {
    */
   setCollections(collections: string[] | null): void;
   selectThread(threadId: string): void;
+  /** Show a thread the host saved; see the `threadId` prop. `null` clears. */
+  openThread(threadId: string | null): void;
+  /** The conversation on screen, or `null` before the first message creates one. */
+  getThreadId(): string | null;
+  /** A saved thread's title and timestamps; `null` if it is not this visitor's. */
+  getThreadSummary(threadId: string): Promise<ThreadSummary | null>;
   configure(overrides: ConfigOverrides): void;
   on(event: WidgetEventName, listener: WidgetEventListener): () => void;
   getState(): ChatState | null;
@@ -86,6 +93,19 @@ export interface ChatRootProps {
    * collections out of reach.
    */
   collections?: string[] | null;
+  /**
+   * Show this thread instead of the visitor's last one — an id saved from
+   * `onThreadChange`. Applies live: changing it loads the new thread in
+   * place. It must belong to `userId`; another visitor's thread shows as
+   * unavailable. Pair with `readOnly` for a past-conversation viewer.
+   */
+  threadId?: string | null;
+  /**
+   * Transcript only: no composer, no switcher, no welcome, and nothing is
+   * written — not to the thread, not to the visitor's saved thread. Files
+   * and attachments still open. Changing it remounts the chat.
+   */
+  readOnly?: boolean;
 
   theme?: ConfigOverrides["theme"];
   layout?: ConfigOverrides["layout"];
@@ -128,6 +148,15 @@ export interface ChatRootProps {
   onAssistantReply?(content: string): void;
   onCommand?(command: unknown): void;
   onError?(error: string): void;
+  /**
+   * The conversation moved to another thread, or to none. Save `threadId`
+   * when `reason` is `"created"` to list the visitor's conversations in
+   * your own app, then show one with `threadId` + `readOnly`.
+   */
+  onThreadChange?(
+    threadId: string | null,
+    info: { previousThreadId: string | null; reason: ThreadChangeReason },
+  ): void;
 
   /** Injected in tests and by the designer preview. */
   transport?: ChatClientOptions["transport"];
@@ -172,6 +201,8 @@ function ChatRoot(props, ref) {
       baseUrl: props.baseUrl,
       vars: props.vars,
       collections: props.collections,
+      threadId: props.threadId,
+      readOnly: props.readOnly,
       theme: props.theme,
       layout: props.layout,
       behavior: props.behavior,
@@ -179,15 +210,22 @@ function ChatRoot(props, ref) {
       transport: props.transport,
     });
     const off = c.on("ready", () => handlers.current.onReady?.());
-    const offAll = (["user-message", "assistant-reply", "command", "error"] as const).map(
-      (name) =>
-        c.on(name, (e: WidgetEvent) => {
-          const h = handlers.current;
-          if (e.type === "user-message") h.onUserMessage?.(e.content);
-          else if (e.type === "assistant-reply") h.onAssistantReply?.(e.content);
-          else if (e.type === "command") h.onCommand?.(e.command);
-          else if (e.type === "error") h.onError?.(e.error);
-        }),
+    const offAll = (
+      ["user-message", "assistant-reply", "command", "error", "thread-change"] as const
+    ).map((name) =>
+      c.on(name, (e: WidgetEvent) => {
+        const h = handlers.current;
+        if (e.type === "user-message") h.onUserMessage?.(e.content);
+        else if (e.type === "assistant-reply") h.onAssistantReply?.(e.content);
+        else if (e.type === "command") h.onCommand?.(e.command);
+        else if (e.type === "error") h.onError?.(e.error);
+        else if (e.type === "thread-change") {
+          h.onThreadChange?.(e.threadId, {
+            previousThreadId: e.previousThreadId,
+            reason: e.reason,
+          });
+        }
+      }),
     );
     setClient(c);
     return () => {
@@ -201,7 +239,9 @@ function ChatRoot(props, ref) {
     // which clears the conversation and re-scopes the transport without
     // tearing down the widget or re-fetching config.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, props.widgetToken, props.baseUrl, props.transport]);
+    // `readOnly` is here because it decides which session store the client
+    // gets; flipping it on a live conversation is not worth the edge cases.
+  }, [mounted, props.widgetToken, props.baseUrl, props.transport, props.readOnly]);
 
   // `userId` and `vars` apply live. Both are diffed against the value the
   // client was built with, so the first render never fires a redundant
@@ -213,6 +253,16 @@ function ChatRoot(props, ref) {
     lastUserId.current = props.userId;
     client.store.actions.setUser(props.userId);
   }, [client, props.userId]);
+
+  // A new `threadId` opens in place. Compared with the value the client was
+  // built with, which it opens itself on start.
+  const lastThreadId = useRef(props.threadId ?? null);
+  useEffect(() => {
+    const next = props.threadId ?? null;
+    if (!client || next === lastThreadId.current) return;
+    lastThreadId.current = next;
+    void client.store.actions.openThread(next);
+  }, [client, props.threadId]);
 
   const varsJson = JSON.stringify(props.vars ?? null);
   const lastVars = useRef(varsJson);
@@ -250,6 +300,10 @@ function ChatRoot(props, ref) {
       setCollections: (collections) =>
         clientRef.current?.store.actions.setCollections(collections),
       selectThread: (id) => void clientRef.current?.store.actions.selectThread(id),
+      openThread: (id) => void clientRef.current?.store.actions.openThread(id),
+      getThreadId: () => clientRef.current?.store.getState().threadId ?? null,
+      getThreadSummary: (id) =>
+        clientRef.current?.store.actions.fetchThreadSummary(id) ?? Promise.resolve(null),
       configure: (overrides) => clientRef.current?.configure(overrides),
       on: (event, listener) => clientRef.current?.on(event, listener) ?? (() => {}),
       getState: () => clientRef.current?.store.getState() ?? null,

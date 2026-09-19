@@ -210,6 +210,10 @@ ${w(".urai-thinking-dots span:nth-child(3)")} { animation-delay: calc(var(--urai
 }
 
 ${w(".urai-empty")} { display: flex; flex-direction: column; gap: var(--urai-space-6); }
+${w(".urai-empty-notice")} {
+  margin: 0; text-align: center;
+  font-size: var(--urai-font-size-sm); color: var(--urai-color-text-muted);
+}
 ${w(".urai-suggested")} { display: flex; flex-wrap: wrap; gap: var(--urai-space-4); }
 ${w(".urai-suggested-question")} {
   background: var(--urai-color-surface-raised); color: var(--urai-color-text);

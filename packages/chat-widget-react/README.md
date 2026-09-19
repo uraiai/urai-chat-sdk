@@ -223,6 +223,8 @@ you can do.
 | Hook | Gives you |
 |---|---|
 | `useChatStatus()` | `status`, `isStreaming`, `canSend`, `isEmpty`, `threadId` |
+| `useThreadId()` | the conversation's thread id, or `null` before the first message |
+| `useThread()` | `threadId`, the opened thread's `summary`, its `load` state, `readOnly` |
 | `useMessages()` | the settled transcript (stable across streamed tokens) |
 | `useStream()` | the in-flight turn, or `null` |
 | `useComposer()` | value, `submit()`, and `getFormProps`/`getInputProps`/`getSendButtonProps` |
@@ -282,8 +284,8 @@ chat.current?.sendMessage("Where is my order?");
 until the visitor actually sends something, so calling it on every
 navigation is free.
 
-The handle also exposes `newConversation`, `selectThread`, `configure`,
-`on`, `getState` and `ready`.
+The handle also exposes `newConversation`, `selectThread`, `openThread`,
+`getThreadId`, `getThreadSummary`, `configure`, `on`, `getState` and `ready`.
 
 ## Props
 
@@ -293,13 +295,15 @@ Required: `widgetToken`, `userId`.
 |---|---|
 | `baseUrl` | Defaults to `https://chat.app.urai.dev`; set it for self-hosted. |
 | `vars` | Thread context (above). |
+| `threadId` | Open this thread instead of the visitor's last one; live (below). |
+| `readOnly` | Transcript only; changing it rebuilds the client (below). |
 | `theme`, `layout`, `behavior` | Config overrides; applied live, above the server's. |
 | `fetchServerConfig` | `false` skips `GET /config` entirely. |
 | `components`, `classNames`, `labels`, `icons`, `unstyled` | Presentation. |
 | `displayComponents` | Rich components tools can show (below). |
 | `colorScheme` | `"host"` (default), `"light"`, `"dark"`, `"system"`. |
 | `className`, `style` | On the root element. |
-| `onReady`, `onUserMessage`, `onAssistantReply`, `onCommand`, `onError` | Events. |
+| `onReady`, `onUserMessage`, `onAssistantReply`, `onCommand`, `onError`, `onThreadChange` | Events. |
 
 `onCommand` fires when a uraiJS tool calls
 `meta.urai.sendCommand(meta.vars.thread_id, payload)` during a turn — use
@@ -307,8 +311,45 @@ it for tool-driven UI signals such as navigation. The payload is the tool
 author's JSON, verbatim: treat it as untrusted and validate its shape
 before acting.
 
-Changing `widgetToken` or `baseUrl` rebuilds the client. `userId` and
-`vars` apply live, without tearing the chat down.
+Changing `widgetToken`, `baseUrl` or `readOnly` rebuilds the client.
+`userId`, `vars` and `threadId` apply live, without tearing the chat down.
+
+## Past conversations
+
+Save thread ids with `onThreadChange`, then show one with `threadId` and
+`readOnly`:
+
+```tsx
+<UraiChat
+  widgetToken={token}
+  userId={user.id}
+  onThreadChange={(threadId, { reason }) => {
+    if (reason === "created") saveConversation(user.id, threadId!);
+  }}
+/>
+
+// Elsewhere — a history page
+<UraiChat
+  widgetToken={token}
+  userId={user.id}         // the visitor who owns the thread
+  threadId={selectedId}    // changing it loads the new thread in place
+  readOnly
+/>
+```
+
+`readOnly` drops the composer, the thread switcher and the welcome, names the
+thread in the header, and refuses every write in the store itself — so a
+custom tree that still renders `<Composer />`, or a display component calling
+`sendMessage`, cannot post into the thread. Files and "Download all files"
+still work, and the visitor's saved thread is left alone. A thread that is not
+this visitor's shows "This conversation is unavailable."
+(`labels.conversationUnavailable`) and fires `onError`.
+
+For your list, `ref.current.getThreadSummary(id)` returns the thread's
+`title` and timestamps, and `useThread()` gives a custom header the open
+thread's `summary`, its `load` state and `readOnly`. `userId` must be the
+thread's owner: see "Saving and showing past conversations" in
+`@uraiai/chat-widget-core` for what that means for who may view what.
 
 ## Rich components from tools
 
@@ -481,9 +522,11 @@ const widget = useRef<WidgetController>(null);
 
 Required: `widgetToken`, `userId`. Optional: `baseUrl`, `vars`, `theme`,
 `layout`, `behavior`, `mode` (`"floating"` default | `"inline"`),
-`className`/`style` (inline container only), `displayComponents`, and
-`onReady`, `onOpened`, `onClosed`, `onUserMessage`, `onAssistantReply`,
-`onCommand`, `onError`.
+`className`/`style` (inline container only), `displayComponents`,
+`threadId`, `readOnly`, and `onReady`, `onOpened`, `onClosed`,
+`onUserMessage`, `onAssistantReply`, `onCommand`, `onError`,
+`onThreadChange`. `threadId`, `readOnly` and `onThreadChange` work as they do
+on `<UraiChat>` (above); a read-only widget reads best with `mode="inline"`.
 
 `displayComponents` maps names to DOM renderers,
 `(element, props, { sendMessage }) => cleanup?`. It is the same contract
@@ -497,7 +540,8 @@ you can `createRoot(element).render(…)` there and `unmount()` in the cleanup.
 | `userId` | `setUser()` — resets the conversation for the new visitor. |
 | `vars` | `setVars()` — updates the current/next thread's context. |
 | `collections` | `setCollections()` — knowledge collection **ids** scoping the conversation, on top of the assistant's own. |
-| `widgetToken`, `baseUrl`, `mode` | Destroys and recreates the widget. |
+| `threadId` | `openThread()` — opens the new thread in place. |
+| `widgetToken`, `baseUrl`, `mode`, `readOnly` | Destroys and recreates the widget. |
 
 
 ## Scoping knowledge (collections)

@@ -1,4 +1,4 @@
-import { type ComponentRenderers, type WidgetBehavior, type WidgetController, type WidgetLayout, type WidgetTheme, type WidgetVars } from "@uraiai/chat-widget-core";
+import { type ComponentRenderers, type ThreadChangeReason, type WidgetBehavior, type WidgetController, type WidgetLayout, type WidgetTheme, type WidgetVars } from "@uraiai/chat-widget-core";
 interface Props {
     widgetToken: string;
     userId: string;
@@ -12,6 +12,17 @@ interface Props {
      * organization's other collections out of reach.
      */
     collections?: string[] | null;
+    /**
+     * Open this thread instead of the visitor's last one — an id saved from
+     * `onthreadchange`. Applies live: changing it opens the new thread in
+     * place. Pair with `readOnly` for a past-conversation viewer.
+     */
+    threadId?: string | null;
+    /**
+     * Transcript only: no composer, switcher or welcome, and nothing is
+     * written. Best with `mode="inline"`. Changing it remounts the widget.
+     */
+    readOnly?: boolean;
     theme?: Partial<WidgetTheme>;
     layout?: Partial<WidgetLayout>;
     behavior?: Partial<WidgetBehavior>;
@@ -39,6 +50,14 @@ interface Props {
      */
     oncommand?: (command: unknown) => void;
     onerror?: (error: string) => void;
+    /**
+     * The conversation moved to another thread, or to none. Save `threadId`
+     * when `info.reason` is `"created"` to list the visitor's conversations.
+     */
+    onthreadchange?: (threadId: string | null, info: {
+        previousThreadId: string | null;
+        reason: ThreadChangeReason;
+    }) => void;
 }
 declare const UraiChatWidget: import("svelte").Component<Props, {
     getController: () => WidgetController | null;

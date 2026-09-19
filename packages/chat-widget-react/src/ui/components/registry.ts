@@ -116,6 +116,11 @@ export interface ThinkingIndicatorSlotProps {
 export interface EmptyStateSlotProps {
   welcomeMessage: string;
   suggestions: ReactNode | null;
+  /**
+   * Set instead of the welcome message while a host-requested thread loads
+   * or when it could not be opened ("This conversation is unavailable").
+   */
+  notice?: string | null;
 }
 
 export interface SuggestedQuestionsSlotProps {

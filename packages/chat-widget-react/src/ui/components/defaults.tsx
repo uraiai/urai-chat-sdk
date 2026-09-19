@@ -265,6 +265,15 @@ export function DefaultScrollToBottomButton(props: {
 
 export function DefaultEmptyState(props: EmptyStateSlotProps) {
   const cls = useCls();
+  if (props.notice) {
+    return (
+      <div className={cls("emptyState", "urai-empty")} data-urai-part="empty-state">
+        <p className="urai-empty-notice" data-urai-part="empty-notice" role="status">
+          {props.notice}
+        </p>
+      </div>
+    );
+  }
   if (!props.welcomeMessage && !props.suggestions) return null;
   return (
     <div className={cls("emptyState", "urai-empty")} data-urai-part="empty-state">

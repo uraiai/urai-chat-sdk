@@ -26,6 +26,10 @@ export interface UraiChatLabels {
   untitledThread: string;
 
   welcomeMessage: string;
+  /** Read-only / host-opened thread states, shown where the transcript would be. */
+  loadingConversation: string;
+  conversationUnavailable: string;
+  conversationLoadFailed: string;
   thinking: string;
   thoughts: string;
   scrollToLatest: string;
@@ -99,6 +103,9 @@ export const DEFAULT_LABELS: UraiChatLabels = {
   untitledThread: "Untitled",
 
   welcomeMessage: "",
+  loadingConversation: "Loading conversation…",
+  conversationUnavailable: "This conversation is unavailable.",
+  conversationLoadFailed: "This conversation could not be loaded.",
   thinking: "Thinking",
   thoughts: "Thoughts",
   scrollToLatest: "Scroll to latest",

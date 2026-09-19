@@ -39,6 +39,8 @@ widget.destroy();
 | `baseUrl` | no | Origin of your chat-service deployment. Defaults to `https://chat.app.urai.dev` (the hosted Urai deployment). |
 | `vars` | no | Context object stored on the next created thread. |
 | `collections` | no | Knowledge collection **ids** to scope the conversation to, on top of the assistant's own. See [Scoping knowledge](#scoping-knowledge-collections). |
+| `threadId` | no | Open this thread instead of the visitor's last one. See [Saving and showing past conversations](#saving-and-showing-past-conversations). |
+| `readOnly` | no | Transcript only: no composer, and nothing is written. Same section. |
 | `theme` / `layout` / `behavior` | no | Override the server-configured appearance. Merge order: defaults → server config → these options → `configure()` calls. |
 | `container` | no | An element to render into. Providing it switches the widget to inline mode; omitting it mounts a floating launcher on `document.body`. |
 | `fetchServerConfig` | no | Set `false` to skip the `GET /config` call and use local options only. |
@@ -48,14 +50,73 @@ widget.destroy();
 `open() / close() / toggle()`, `sendMessage(content)`, `reset()`,
 `setUser({ id, vars? })` (identity change resets the conversation),
 `setVars(vars)`, `setCollections(ids)`, `startConversation({ vars?, collections? })`,
+`openThread(id | null)`, `getThreadId()`, `getThreadSummary(id)`,
 `configure(overrides)`,
 `on(event, listener)` (returns an unsubscribe function), `ready`
 (promise, resolves after config fetch + mount), `destroy()` (idempotent).
 
 Events: `ready`, `opened`, `closed`, `user-message`, `assistant-reply`,
-`command`, `error`, `destroyed`.
+`command`, `thread-change`, `error`, `destroyed`.
 
 Calls made before `ready` resolves are queued and replayed in order.
+
+## Saving and showing past conversations
+
+To list a visitor's conversations in your own app, save each thread id as it
+is created, then open one later with `threadId` — usually `readOnly`, as a
+transcript.
+
+```ts
+// 1. Save ids as conversations start
+widget.on("thread-change", (e) => {
+  if (e.type === "thread-change" && e.reason === "created") {
+    void api.saveConversation({ userId: "user_42", threadId: e.threadId });
+  }
+});
+
+// 2. Show one later, read-only, inside your page
+const viewer = createUraiChatWidget({
+  widgetToken: "<widget token>",
+  userId: "user_42",          // the visitor who owns the thread
+  threadId: saved.threadId,
+  readOnly: true,
+  container: document.querySelector("#transcript")!,
+});
+viewer.openThread(otherThreadId); // swap threads in place
+
+// Titles for your list (the server names threads after the first reply)
+const summary = await viewer.getThreadSummary(saved.threadId);
+summary?.title; // also created_at, updated_at, last_message_at, last_message_preview
+```
+
+`thread-change` fires only when the id really changes, with a `reason`:
+
+| `reason` | When |
+|---|---|
+| `created` | The first message of a new conversation created a thread. Fires **before** that message is sent, so the id is yours even if the send fails. |
+| `restored` | The visitor's last thread was reloaded from `localStorage`. |
+| `selected` | The visitor picked a thread in the switcher. |
+| `opened` | You opened one (`threadId` / `openThread`). `threadId: null` means you cleared it, or it could not be opened — an `error` event says which. |
+| `reset` | "New conversation" / `startConversation` / `reset()`. `threadId` is `null` until the next send. |
+| `user-changed` | `setUser` switched visitor. `threadId` is `null`. |
+
+**`readOnly`** shows the transcript and nothing else: no composer, no
+switcher, no welcome message, and the header shows the thread's title. It is
+enforced in the widget, not only hidden — `sendMessage`, `reset`,
+`startConversation` and a component's `sendMessage` do nothing (with a
+one-time console warning), `setVars` / `setCollections` never write to the
+thread, and the visitor's saved thread in `localStorage` is left alone, so
+viewing an old conversation never moves their live chat. Files, attachments
+and "Download all files" still work. Without `readOnly`, `threadId` resumes
+that conversation interactively.
+
+**Whose thread?** Pass the `userId` of the visitor who **owns** the thread.
+The server answers any other visitor's thread with a 404, shown as "This
+conversation is unavailable." For a visitor looking at their own history
+that is their own id; for, say, a support agent reading a customer's
+conversation, it is the customer's. `userId` is an identity your app asserts
+— the widget token and origin allowlist are what authorise the request — so
+deciding who in your app may open whose conversations is your app's job.
 
 ## Passing context (vars)
 

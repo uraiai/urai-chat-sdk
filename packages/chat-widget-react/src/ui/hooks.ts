@@ -63,10 +63,42 @@ export function useChatStatus(): ChatStatusInfo {
       isStreaming: s.status === "streaming",
       isSending: s.status !== "idle",
       canSend:
+        !s.readOnly &&
+        s.threadLoad !== "loading" &&
         s.status === "idle" &&
         (s.draft.trim().length > 0 || s.attachments.length > 0),
       isEmpty: s.messages.length === 0 && s.stream === null,
       threadId: s.threadId,
+    }),
+    shallowEqual,
+  );
+}
+
+/**
+ * The id of the conversation on screen, or `null` before the first message
+ * creates one. Save it from `onThreadChange` rather than polling this —
+ * this is for rendering (a "copy link" button, a debug readout).
+ */
+export function useThreadId(): string | null {
+  return useChatSelector((s) => s.threadId);
+}
+
+export interface UseThreadResult {
+  threadId: string | null;
+  /** Title and timestamps of a thread the host opened; `null` otherwise. */
+  summary: ChatState["thread"];
+  /** Progress of a host-requested open — see `ChatState.threadLoad`. */
+  load: ChatState["threadLoad"];
+  readOnly: boolean;
+}
+
+export function useThread(): UseThreadResult {
+  return useChatSelector(
+    (s) => ({
+      threadId: s.threadId,
+      summary: s.thread,
+      load: s.threadLoad,
+      readOnly: s.readOnly,
     }),
     shallowEqual,
   );
@@ -119,6 +151,8 @@ export function useComposer(): UseComposerResult {
     (s) => ({
       draft: s.draft,
       canSend:
+        !s.readOnly &&
+        s.threadLoad !== "loading" &&
         s.status === "idle" &&
         (s.draft.trim().length > 0 || s.attachments.length > 0),
       isStreaming: s.status === "streaming",

@@ -32,6 +32,35 @@ function widgetRoutes(token: string) {
   };
 }
 
+function threadRoutes(token: string) {
+  const history = (id: string) => [
+    {
+      id: `${id}-m`,
+      thread_id: id,
+      message_idx: 0,
+      role: "assistant",
+      content: `answer ${id}`,
+      reasoning: null,
+      created_at: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const summary = (id: string) => ({
+    id,
+    title: `Thread ${id}`,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    last_message_at: null,
+    last_message_preview: null,
+  });
+  return {
+    ...widgetRoutes(token),
+    [`GET /api/widget/v1/${token}/threads/tA/messages`]: () => history("tA"),
+    [`GET /api/widget/v1/${token}/threads/tA`]: () => summary("tA"),
+    [`GET /api/widget/v1/${token}/threads/tB/messages`]: () => history("tB"),
+    [`GET /api/widget/v1/${token}/threads/tB`]: () => summary("tB"),
+  };
+}
+
 function hosts(): Element[] {
   return Array.from(document.querySelectorAll("[data-urai-chat-widget]"));
 }
@@ -201,6 +230,54 @@ describe("UraiChatWidget (Svelte)", () => {
     flushSync();
     await flushAsync();
     expect(onready).toHaveBeenCalledOnce();
+    unmount(instance);
+    target.remove();
+  });
+
+  it("fires onthreadchange for the created thread", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const onthreadchange = vi.fn();
+    const instance = mount(UraiChatWidget, {
+      target,
+      props: { widgetToken: TOKEN, userId: "v1", baseUrl: BASE, onthreadchange },
+    });
+    flushSync();
+    await flushAsync();
+    const controller = (
+      instance as unknown as { getController(): { sendMessage(t: string): void } }
+    ).getController();
+    controller.sendMessage("hi");
+    await flushAsync();
+    expect(onthreadchange).toHaveBeenCalledWith("t1", {
+      previousThreadId: null,
+      reason: "created",
+    });
+    unmount(instance);
+    target.remove();
+  });
+
+  it("opens the threadId prop read-only", async () => {
+    installFakeFetch(threadRoutes(TOKEN));
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const instance = mount(UraiChatWidget, {
+      target,
+      props: {
+        widgetToken: TOKEN,
+        userId: "v1",
+        baseUrl: BASE,
+        mode: "inline",
+        readOnly: true,
+        threadId: "tA",
+      },
+    });
+    flushSync();
+    await flushAsync();
+    const controller = (
+      instance as unknown as { getController(): { getThreadId(): string | null } }
+    ).getController();
+    expect(controller.getThreadId()).toBe("tA");
     unmount(instance);
     target.remove();
   });

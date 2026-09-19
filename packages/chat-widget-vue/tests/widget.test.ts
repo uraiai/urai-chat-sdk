@@ -33,6 +33,35 @@ function widgetRoutes(token: string) {
   };
 }
 
+function threadRoutes(token: string) {
+  const history = (id: string) => [
+    {
+      id: `${id}-m`,
+      thread_id: id,
+      message_idx: 0,
+      role: "assistant",
+      content: `answer ${id}`,
+      reasoning: null,
+      created_at: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const summary = (id: string) => ({
+    id,
+    title: `Thread ${id}`,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    last_message_at: null,
+    last_message_preview: null,
+  });
+  return {
+    ...widgetRoutes(token),
+    [`GET /api/widget/v1/${token}/threads/tA/messages`]: () => history("tA"),
+    [`GET /api/widget/v1/${token}/threads/tA`]: () => summary("tA"),
+    [`GET /api/widget/v1/${token}/threads/tB/messages`]: () => history("tB"),
+    [`GET /api/widget/v1/${token}/threads/tB`]: () => summary("tB"),
+  };
+}
+
 function hosts(): Element[] {
   return Array.from(document.querySelectorAll("[data-urai-chat-widget]"));
 }
@@ -161,6 +190,40 @@ describe("UraiChatWidget (Vue)", () => {
     controller.open();
     await nextTick();
     expect(wrapper.emitted("opened")).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("emits thread-change for the created thread", async () => {
+    const wrapper = mount(UraiChatWidget, {
+      props: { widgetToken: TOKEN, userId: "v1", baseUrl: BASE },
+    });
+    await flushAsync();
+    const controller = (
+      wrapper.vm as unknown as { controller: { sendMessage(t: string): void } }
+    ).controller;
+    controller.sendMessage("hi");
+    await flushAsync();
+    expect(wrapper.emitted("thread-change")?.[0]).toEqual([
+      "t1",
+      { previousThreadId: null, reason: "created" },
+    ]);
+    wrapper.unmount();
+  });
+
+  it("opens a new threadId in place, without remounting", async () => {
+    installFakeFetch(threadRoutes(TOKEN));
+    const wrapper = mount(UraiChatWidget, {
+      props: { widgetToken: TOKEN, userId: "v1", baseUrl: BASE, readOnly: true, threadId: "tA" },
+    });
+    await flushAsync();
+    const host = hosts()[0];
+    await wrapper.setProps({ threadId: "tB" });
+    await flushAsync();
+    expect(hosts()[0]).toBe(host);
+    const controller = (
+      wrapper.vm as unknown as { controller: { getThreadId(): string | null } }
+    ).controller;
+    expect(controller.getThreadId()).toBe("tB");
     wrapper.unmount();
   });
 });

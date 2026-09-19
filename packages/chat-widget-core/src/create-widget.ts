@@ -10,7 +10,7 @@ import {
   type WidgetLayout,
   type WidgetTheme,
 } from "./config";
-import { Transport } from "./transport";
+import { Transport, type ThreadSummary } from "./transport";
 import {
   Emitter,
   type WidgetEvent,
@@ -51,6 +51,20 @@ export interface UraiChatWidgetOptions {
    * other collections out of reach.
    */
   collections?: string[] | null;
+  /**
+   * Open this thread instead of the visitor's last one — an id the host
+   * saved from a `thread-change` event. It must belong to `userId`; another
+   * visitor's thread shows as unavailable. Change it later with
+   * `openThread`.
+   */
+  threadId?: string | null;
+  /**
+   * Show the transcript only: no composer, switcher or welcome message.
+   * Sends, uploads and resets are refused, vars and collections are never
+   * written to the thread, and the visitor's saved thread is left alone.
+   * Pair with `threadId` and a `container` for a past-conversation viewer.
+   */
+  readOnly?: boolean;
   theme?: Partial<WidgetTheme>;
   layout?: Partial<WidgetLayout>;
   behavior?: Partial<WidgetBehavior>;
@@ -87,6 +101,22 @@ export interface WidgetController {
    */
   setCollections(collections: string[] | null): void;
   startConversation(opts?: StartConversationArg): void;
+  /**
+   * Show a thread the host saved (see the `threadId` option), in place.
+   * `null` clears the conversation.
+   */
+  openThread(threadId: string | null): void;
+  /**
+   * The conversation on screen, or `null` before the first message creates
+   * one (or before the widget has mounted). To save ids, listen for
+   * `thread-change` rather than polling this.
+   */
+  getThreadId(): string | null;
+  /**
+   * A saved thread's title and timestamps, for listing past conversations.
+   * `null` when it is not this visitor's, or on failure.
+   */
+  getThreadSummary(threadId: string): Promise<ThreadSummary | null>;
   /** Re-resolve config: server config → constructor options → these overrides. */
   configure(overrides: ConfigOverrides): void;
   on(event: WidgetEventName, listener: WidgetEventListener): () => void;
@@ -191,6 +221,8 @@ export function createUraiChatWidget(
       initialUserId: userId,
       initialVars: options.vars ?? null,
       initialCollections: options.collections ?? null,
+      initialThreadId: options.threadId ?? null,
+      readOnly: options.readOnly,
       hostElement: host,
       displayComponents: options.displayComponents,
       emit: (event: WidgetEvent) => emitter.emit(event),
@@ -223,6 +255,16 @@ export function createUraiChatWidget(
     setVars: (vars) => call((m) => m.setVars(vars)),
     setCollections: (collections) => call((m) => m.setCollections(collections)),
     startConversation: (opts) => call((m) => m.startConversation(opts)),
+    openThread: (threadId) => call((m) => m.openThread(threadId)),
+    getThreadId: () => mounted?.getThreadId() ?? null,
+    async getThreadSummary(threadId) {
+      try {
+        return await transport.getThread(threadId);
+      } catch (e) {
+        console.warn("[UraiChat] thread fetch failed:", e);
+        return null;
+      }
+    },
     configure: (overrides) =>
       call((m) =>
         m.applyConfig(

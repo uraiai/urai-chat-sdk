@@ -35,9 +35,28 @@ const widget = ref<{ controller: WidgetController | null } | null>(null);
 Required props: `widgetToken`, `userId`.
 Optional: `baseUrl` (defaults to `https://chat.app.urai.dev`; set it for
 self-hosted deployments), `vars`, `collections`, `theme`, `layout`, `behavior`, `displayComponents`, `mode`
-(`"floating"` default | `"inline"`).
+(`"floating"` default | `"inline"`), `threadId`, `readOnly`.
 Emits: `ready`, `opened`, `closed`, `user-message`, `assistant-reply`,
-`command`, `error`.
+`command`, `thread-change`, `error`.
+
+`@thread-change` gives `(threadId, { previousThreadId, reason })` whenever the
+conversation moves to another thread. Save `threadId` when `reason` is
+`"created"`, then show a saved conversation with `thread-id` and `read-only`:
+
+```vue
+<UraiChatWidget
+  widget-token="…"
+  :user-id="user.id"
+  mode="inline"
+  :thread-id="selectedThreadId"
+  read-only
+/>
+```
+
+`read-only` shows the transcript only (no composer or switcher) and writes
+nothing. `user-id` must be the visitor who owns the thread. See "Saving and
+showing past conversations" in `@uraiai/chat-widget-core` for the details,
+including who should be allowed to view what.
 
 `@command` fires when a uraiJS tool calls
 `meta.urai.sendCommand(meta.vars.thread_id, payload)` during the turn —
@@ -81,11 +100,12 @@ size it via the parent element.
 | `userId` | `setUser()` — resets the conversation for the new visitor. |
 | `vars` | `setVars()` — updates the current/next thread's context. |
 | `collections` | `setCollections()` — knowledge collection **ids** scoping the conversation, on top of the assistant's own. |
-| `widgetToken`, `baseUrl`, `mode` | Destroys and recreates the widget. |
+| `threadId` | `openThread()` — opens the new thread in place. |
+| `widgetToken`, `baseUrl`, `mode`, `readOnly` | Destroys and recreates the widget. |
 
 The template ref exposes `controller` (a `WidgetController` with `open`,
-`close`, `sendMessage`, `startConversation`, `on`, …); it is `null` until
-mounted.
+`close`, `sendMessage`, `startConversation`, `openThread`, `getThreadId`,
+`getThreadSummary`, `on`, …); it is `null` until mounted.
 
 ## Passing context (vars)
 

@@ -2,6 +2,7 @@ import {
   createUraiChatWidget,
   type ComponentRenderers,
   type ConfigOverrides,
+  type ThreadChangeReason,
   type WidgetBehavior,
   type WidgetController,
   type WidgetLayout,
@@ -24,6 +25,8 @@ export type {
   ComponentRenderer,
   ComponentRenderers,
   ConfigOverrides,
+  ThreadChangeReason,
+  ThreadSummary,
   WidgetBehavior,
   WidgetController,
   WidgetLayout,
@@ -52,6 +55,20 @@ export const UraiChatWidget = defineComponent({
       type: Array as PropType<string[] | null>,
       default: null,
     },
+    /**
+     * Open this thread instead of the visitor's last one — an id saved from
+     * `thread-change`. Applies live: changing it opens the new thread in
+     * place. Pair with `readOnly` for a past-conversation viewer.
+     */
+    threadId: {
+      type: String as PropType<string | null>,
+      default: null,
+    },
+    /**
+     * Transcript only: no composer, switcher or welcome, and nothing is
+     * written. Best with `mode="inline"`. Changing it remounts the widget.
+     */
+    readOnly: { type: Boolean, default: false },
     theme: {
       type: Object as PropType<Partial<WidgetTheme>>,
       default: undefined,
@@ -96,6 +113,14 @@ export const UraiChatWidget = defineComponent({
      */
     command: (_command: unknown) => true,
     error: (_error: string) => true,
+    /**
+     * The conversation moved to another thread, or to none. Save `threadId`
+     * when `info.reason` is `"created"` to list the visitor's conversations.
+     */
+    "thread-change": (
+      _threadId: string | null,
+      _info: { previousThreadId: string | null; reason: ThreadChangeReason },
+    ) => true,
   },
   setup(props, { emit, expose }) {
     const containerEl = ref<HTMLDivElement | null>(null);
@@ -106,6 +131,7 @@ export const UraiChatWidget = defineComponent({
     let lastOverrides = "";
     let lastVars = "";
     let lastCollections = "";
+    let lastThreadId: string | null = null;
 
     const overridesOf = (): ConfigOverrides => ({
       theme: props.theme,
@@ -132,6 +158,8 @@ export const UraiChatWidget = defineComponent({
         baseUrl: props.baseUrl,
         vars: props.vars,
         collections: props.collections,
+        threadId: props.threadId,
+        readOnly: props.readOnly,
         theme: props.theme,
         layout: props.layout,
         behavior: props.behavior,
@@ -142,6 +170,7 @@ export const UraiChatWidget = defineComponent({
       lastOverrides = JSON.stringify(overridesOf());
       lastVars = JSON.stringify(props.vars ?? null);
       lastCollections = JSON.stringify(props.collections ?? null);
+      lastThreadId = props.threadId ?? null;
       subscriptions = [
         c.on("ready", () => emit("ready")),
         c.on("opened", () => emit("opened")),
@@ -158,15 +187,24 @@ export const UraiChatWidget = defineComponent({
         c.on("error", (e) => {
           if (e.type === "error") emit("error", e.error);
         }),
+        c.on("thread-change", (e) => {
+          if (e.type === "thread-change") {
+            emit("thread-change", e.threadId, {
+              previousThreadId: e.previousThreadId,
+              reason: e.reason,
+            });
+          }
+        }),
       ];
     }
 
     onMounted(create);
     onBeforeUnmount(destroy);
 
-    // Transport identity and mount topology are constructor-time: remount.
+    // Transport identity, mount topology and read-only are constructor-time:
+    // remount.
     watch(
-      () => [props.widgetToken, props.baseUrl, props.mode],
+      () => [props.widgetToken, props.baseUrl, props.mode, props.readOnly],
       () => create(),
       { flush: "post" },
     );
@@ -180,6 +218,16 @@ export const UraiChatWidget = defineComponent({
         if (!controller.value || json === lastOverrides) return;
         lastOverrides = json;
         controller.value.configure(JSON.parse(json) as ConfigOverrides);
+      },
+    );
+
+    // A new threadId opens in place; the widget opens its first one itself.
+    watch(
+      () => props.threadId ?? null,
+      (id) => {
+        if (!controller.value || id === lastThreadId) return;
+        lastThreadId = id;
+        controller.value.openThread(id);
       },
     );
 
