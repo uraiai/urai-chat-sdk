@@ -15,6 +15,7 @@ import type {
   AttachmentListSlotProps,
   ComponentListSlotProps,
   ComposerSlotProps,
+  DelegateListSlotProps,
   EmptyStateSlotProps,
   FallbackSlotProps,
   FileListSlotProps,
@@ -116,6 +117,7 @@ export function DefaultAssistantMessage(props: MessageSlotProps) {
       <span className="urai-sr-only">{labels.messageRolePrefix("assistant")}</span>
       <div className="urai-bubble">
         {props.content}
+        {props.delegates}
         {props.displayComponents}
         {props.files}
       </div>
@@ -153,6 +155,7 @@ export function DefaultStreamingMessage(props: StreamingMessageSlotProps) {
       {props.toolActivity}
       <div className="urai-bubble">
         {props.content}
+        {props.delegates}
         {props.displayComponents}
         {props.files}
       </div>
@@ -361,6 +364,54 @@ export function DefaultComponentList(props: ComponentListSlotProps) {
   );
 }
 
+/**
+ * Sub-agent cards: "Sub-agent", the task's first line, a status (a spinner
+ * while running) and a step count once history knows it. `data-state` is
+ * the card's status, for styling.
+ */
+export function DefaultDelegateList(props: DelegateListSlotProps) {
+  const cls = useCls();
+  const { labels } = usePresentation();
+  if (props.delegates.length === 0) return null;
+  return (
+    <div
+      className={cls("delegateList", "urai-delegates")}
+      data-urai-part="delegate-list"
+      role="group"
+      aria-label={labels.subAgents}
+    >
+      {props.delegates.map((d) => {
+        const steps = labels.delegateSteps(d.steps);
+        return (
+          <div
+            key={d.id}
+            className={cls("delegate", "urai-delegate", { status: d.status })}
+            data-urai-part="delegate"
+            data-state={d.status}
+            aria-busy={d.status === "running" ? true : undefined}
+          >
+            <span className="urai-delegate-icon" aria-hidden="true" />
+            <div className="urai-delegate-main">
+              <div className="urai-delegate-head">
+                <span className="urai-delegate-kind">{labels.subAgent}</span>
+                <span className="urai-delegate-status">
+                  {labels.delegateStatus(d.status)}
+                </span>
+                {steps && <span className="urai-delegate-steps">{steps}</span>}
+              </div>
+              {d.label && (
+                <div className="urai-delegate-label" title={d.label}>
+                  {d.label}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function DefaultComposer(props: ComposerSlotProps) {
   const cls = useCls();
   const { labels, idPrefix } = usePresentation();
@@ -546,6 +597,7 @@ export const defaultComponents: UraiChatComponents = {
   AttachmentList: DefaultAttachmentList,
   FileList: DefaultFileList,
   ComponentList: DefaultComponentList,
+  DelegateList: DefaultDelegateList,
   Composer: DefaultComposer,
   ComposerInput: DefaultComposerInput,
   SendButton: DefaultSendButton,

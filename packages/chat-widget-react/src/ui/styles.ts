@@ -275,6 +275,36 @@ ${w(".urai-attachment-file")} {
 ${w(".urai-attachment-file svg")} { width: 14px; height: 14px; flex: 0 0 auto; }
 ${w(".urai-files")} { margin-top: var(--urai-space-5); }
 ${w(".urai-components")} { display: flex; flex-direction: column; gap: var(--urai-space-4); margin-top: var(--urai-space-5); }
+${w(".urai-delegates")} { display: flex; flex-direction: column; gap: var(--urai-space-3); margin-top: var(--urai-space-5); }
+${w(".urai-delegate")} {
+  display: flex; align-items: flex-start; gap: var(--urai-space-4); min-width: 0;
+  padding: var(--urai-space-3) var(--urai-space-5);
+  border: 1px solid var(--urai-color-border); border-radius: var(--urai-radius-sm);
+  background: var(--urai-color-surface-raised);
+  font-size: var(--urai-font-size-xs); line-height: var(--urai-line-height-snug);
+}
+${w(".urai-delegate-icon")} {
+  flex: 0 0 auto; width: 10px; height: 10px; margin-top: 3px;
+  border-radius: var(--urai-radius-full); background: var(--urai-color-text-muted);
+}
+${w('.urai-delegate[data-state="running"] .urai-delegate-icon')} {
+  background: none; border: 2px solid var(--urai-color-border);
+  border-top-color: var(--urai-color-accent);
+  animation: var(--urai-animation-delegate-spin, urai-delegate-spin 0.8s linear infinite);
+}
+${w('.urai-delegate[data-state="completed"] .urai-delegate-icon')} { background: var(--urai-color-accent); }
+${w('.urai-delegate[data-state="failed"] .urai-delegate-icon, .urai-delegate[data-state="error"] .urai-delegate-icon')} { background: var(--urai-color-danger); }
+${w('.urai-delegate[data-state="failed"] .urai-delegate-status, .urai-delegate[data-state="error"] .urai-delegate-status')} { color: var(--urai-color-danger); }
+${w(".urai-delegate-main")} { flex: 1 1 auto; min-width: 0; }
+${w(".urai-delegate-head")} {
+  display: flex; align-items: baseline; gap: var(--urai-space-3);
+  color: var(--urai-color-text-muted);
+}
+${w(".urai-delegate-kind")} { font-weight: 600; }
+${w(".urai-delegate-status::before")} { content: "·"; margin-right: var(--urai-space-3); }
+${w(".urai-delegate-steps")} { margin-left: auto; white-space: nowrap; }
+${w(".urai-delegate-label")} { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes urai-delegate-spin { to { transform: rotate(360deg); } }
 ${w(".urai-file-image-link")} { display: block; max-width: 100%; border-radius: var(--urai-radius-sm); }
 /* Charts and diagrams, not photos: show all of one at the bubble's width. */
 ${w(".urai-file-image")} { display: block; max-width: 100%; max-height: 280px; object-fit: contain; }
@@ -350,6 +380,7 @@ ${w(".urai-fallback")} { display: block; }
   ${w(".urai-root")} {
     --urai-animation-tool-pulse: none;
     --urai-animation-thinking-pulse: none;
+    --urai-animation-delegate-spin: none;
     --urai-duration-fast: 0.01ms;
     --urai-duration-normal: 0.01ms;
   }

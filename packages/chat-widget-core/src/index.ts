@@ -40,7 +40,9 @@ export {
 } from "./config";
 
 export type {
+  DelegateStatus,
   MessageComponent,
+  MessageDelegate,
   ServerMessage,
   ThreadSummary,
   SendMessageResult,

@@ -16,13 +16,19 @@
  *    so a memoized message row cannot re-render per token.
  */
 import type { ResolvedConfig } from "../config";
-import type { ThreadArchive, ThreadSummary, WidgetAttachment } from "../transport";
+import type {
+  ServerMessage,
+  ThreadArchive,
+  ThreadSummary,
+  WidgetAttachment,
+} from "../transport";
 import type { ThreadChangeReason, WidgetEvent } from "../events";
 import { createReasoning } from "./reasoning";
 import { createToolActivity } from "./tool-activity";
 import { hydrateHistory, commitStream } from "./messages";
 import { freshFiles, shownFileVersions, withoutFiles } from "./files";
 import { parseDisplayComponent } from "./components";
+import { createDelegateList } from "./delegates";
 import { createNullSessionStore, type SessionStore } from "./persistence";
 import type { ChatTransport } from "./transport-port";
 import type {
@@ -52,6 +58,12 @@ export interface ChatStoreDeps {
    * fake timers. Defaults to "raf" in a browser, "sync" otherwise.
    */
   batch?: "raf" | "sync";
+  /**
+   * How often, in ms, a streaming turn checks history for a reply the
+   * stream never delivered — see `watchTurn`. `0` turns the check off.
+   * Defaults to 5000.
+   */
+  turnPollMs?: number;
 }
 
 export interface ChatActions {
@@ -183,6 +195,25 @@ function httpStatus(error: unknown): number | null {
   return typeof status === "number" ? status : null;
 }
 
+/**
+ * Whether history already holds the finished reply `messageId`.
+ *
+ * The server writes the assistant row empty at send time with a null
+ * `reasoning`, and fills in both only when the turn is finalized —
+ * `reasoning` becomes a string then, even an empty one. So a non-null
+ * `reasoning` marks a finished turn. A later message in the thread
+ * settles it too.
+ */
+export function isTurnFinished(
+  messages: ServerMessage[],
+  messageId: string,
+): boolean {
+  const reply = messages.find((m) => m.id === messageId);
+  if (!reply) return false;
+  if (reply.reasoning !== null && reply.reasoning !== undefined) return true;
+  return messages.some((m) => m.message_idx > reply.message_idx);
+}
+
 export function createChatStore(deps: ChatStoreDeps): ChatStore {
   // Read-only never touches the visitor's saved thread: viewing an old
   // conversation must not move the one their live chat resumes.
@@ -205,6 +236,8 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
   let started = false;
   let scheduled = false;
   let closeStream: (() => void) | null = null;
+  let stopWatch: (() => void) | null = null;
+  const turnPollMs = deps.turnPollMs ?? 5000;
   let localIdSeq = 0;
   const inflightUploads = new Set<Promise<void>>();
   let localMessageSeq = 0;
@@ -300,6 +333,46 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       closeStream();
       closeStream = null;
     }
+    if (stopWatch) {
+      stopWatch();
+      stopWatch = null;
+    }
+  }
+
+  /**
+   * Fallback for a stream that never ends. If the browser opens (or
+   * reopens) the SSE connection after the turn has finished on the
+   * server, the server holds the connection open and never sends
+   * `complete` or `done`, and the turn would spin forever. So while a
+   * turn streams, history is checked every `turnPollMs`. Once it holds
+   * the finished reply, the stream closes, the transcript is reloaded
+   * from history and the turn ends as if `done` had arrived.
+   *
+   * Interim: remove once chat-service sends `complete` on a stream
+   * opened for an already-finalized message.
+   */
+  function watchTurn(g: number, threadId: string, messageId: string) {
+    const transport = deps.transport;
+    if (!transport || !(turnPollMs > 0)) return;
+    let checking = false;
+    const timer = setInterval(async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const msgs = await transport.listMessages(threadId);
+        if (g !== gen || state.stream?.messageId !== messageId) return;
+        if (!isTurnFinished(msgs, messageId)) return;
+        const content = msgs.find((m) => m.id === messageId)?.content ?? "";
+        stopStream();
+        set({ messages: hydrateHistory(msgs), stream: null, status: "idle" });
+        emit({ type: "assistant-reply", content });
+      } catch {
+        // Transient: the next tick tries again.
+      } finally {
+        checking = false;
+      }
+    }, turnPollMs);
+    stopWatch = () => clearInterval(timer);
   }
 
   // ---------------------------------------------------------------
@@ -461,10 +534,15 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
   // Streaming
   // ---------------------------------------------------------------
 
-  function consumeStream(g: number, assistantMessageId: string) {
+  function consumeStream(
+    g: number,
+    threadId: string,
+    assistantMessageId: string,
+  ) {
     if (!deps.transport) return;
     const tools = createToolActivity();
     const reasoning = createReasoning();
+    const delegates = createDelegateList();
 
     set({
       status: "streaming",
@@ -475,6 +553,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         tool: null,
         files: [],
         components: [],
+        delegates: [],
         attached: false,
       },
     });
@@ -529,16 +608,19 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         attach();
         patchStream({ components: [...state.stream.components, component] });
       },
-      onToolCallStarted({ id, fn_name }) {
+      onToolCallStarted(call) {
         if (g !== gen) return;
         attach();
-        tools.start(id, fn_name);
+        tools.start(call.id, call.fn_name);
         syncModels();
+        if (delegates.start(call)) patchStream({ delegates: delegates.snapshot() });
       },
-      onToolCallCompleted({ id, files }) {
+      onToolCallCompleted(call) {
+        const { id, files } = call;
         if (g !== gen) return;
         tools.complete(id);
         syncModels();
+        if (delegates.complete(call)) patchStream({ delegates: delegates.snapshot() });
         // Each listing is the whole workspace, so it replaces what the
         // turn showed before rather than adding to it.
         if (files) {
@@ -566,6 +648,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         // releases its handle.
         closeStream = null;
         if (g !== gen) return;
+        stopStream();
         attach();
         tools.clear();
         const finished = state.stream;
@@ -582,12 +665,14 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       onError(err) {
         closeStream = null;
         if (g !== gen) return;
+        stopStream();
         tools.clear();
         set({ stream: null, status: "idle" });
         pushError(err);
         emit({ type: "error", error: err });
       },
     });
+    watchTurn(g, threadId, assistantMessageId);
   }
 
   // ---------------------------------------------------------------
@@ -675,7 +760,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         state.vars,
       );
       if (g !== gen) return;
-      consumeStream(g, sent.assistant_message_id);
+      consumeStream(g, threadId, sent.assistant_message_id);
     } catch (e: unknown) {
       if (g !== gen) return;
       const msg = e instanceof Error ? e.message : String(e);

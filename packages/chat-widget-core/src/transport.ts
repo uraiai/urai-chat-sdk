@@ -56,6 +56,37 @@ export interface ServerMessage {
    * sent them — see `MessageComponent`. Absent when there are none.
    */
   components?: MessageComponent[] | null;
+  /**
+   * One entry per `delegate` tool call this turn made — the assistant
+   * handing a sub-task to a sub-agent — in call order. `id` is the tool
+   * call's id, the same as its `<urai-tool-call id>` marker and its live
+   * `tool_call_started` event. Absent when there are none.
+   */
+  delegates?: MessageDelegate[] | null;
+}
+
+/** Where a sub-agent run got to. `running` until its tool call completes. */
+export type DelegateStatus =
+  | "running"
+  | "completed"
+  | "no_output"
+  | "failed"
+  | "timeout"
+  | "cancelled"
+  | "error";
+
+/**
+ * A sub-agent card: the visitor-safe view of one `delegate` call. No link,
+ * cost or answer text — the sub-agent's thread is not the visitor's.
+ */
+export interface MessageDelegate {
+  /** The tool call's id. */
+  id: string;
+  /** The task's first line. */
+  label: string;
+  status: DelegateStatus;
+  /** Steps the sub-agent took; 0 when not known (always, while live). */
+  steps: number;
 }
 
 /**
@@ -444,13 +475,14 @@ export class Transport {
       handlers.onReasoning?.((e as MessageEvent).data),
     );
     // Tool-call lifecycle. Payloads are minimal — `{id, fn_name}` on
-    // start, `{id, ok, files?}` on completion. Enough for a status pill
+    // start (plus `label` for a `delegate` call), `{id, ok, files?,
+    // status?}` on completion. Enough for a status pill
     // and the files list; the full args/response stay on the
     // authenticated thread-events channel which the widget doesn't
     // subscribe to.
     es.addEventListener("tool_call_started", (e) => {
       try {
-        const data = JSON.parse((e as MessageEvent).data) as { id: string; fn_name: string };
+        const data = JSON.parse((e as MessageEvent).data) as ToolCallStartedEvent;
         handlers.onToolCallStarted?.(data);
       } catch { /* ignore malformed */ }
     });
@@ -521,9 +553,22 @@ export class Transport {
   }
 }
 
+export interface ToolCallStartedEvent {
+  id: string;
+  fn_name: string;
+  /** For a `delegate` call only: the task's first line. */
+  label?: string;
+}
+
 export interface ToolCallCompletedEvent {
   id: string;
   ok: boolean;
+  /**
+   * How the call settled, when the tool reports more than `ok`. A
+   * `delegate` call sends `completed`, `no_output`, `failed`, `timeout` or
+   * `cancelled`; `ok: false` without a status is an error.
+   */
+  status?: string;
   /**
    * The workspace's visitor-facing files after this call — the **whole**
    * listing, not just what the call wrote, each with its `modified_at`.
@@ -536,7 +581,7 @@ export interface StreamHandlers {
   onChunk?: (chunk: string) => void;
   onReasoning?: (chunk: string) => void;
   onCommand?: (command: unknown) => void;
-  onToolCallStarted?: (call: { id: string; fn_name: string }) => void;
+  onToolCallStarted?: (call: ToolCallStartedEvent) => void;
   onToolCallCompleted?: (call: ToolCallCompletedEvent) => void;
   onToolCallSummary?: (call: { id: string; summary: string }) => void;
   onComplete?: (message: ServerMessage | null) => void;

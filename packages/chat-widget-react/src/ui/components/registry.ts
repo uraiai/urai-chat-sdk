@@ -4,6 +4,7 @@ import type { ComponentType, ReactNode } from "react";
 import type {
   ChatMessage,
   MessageComponent,
+  MessageDelegate,
   PendingAttachment,
   StreamSlice,
   ThreadSummary,
@@ -61,6 +62,12 @@ export interface MessageSlotProps {
    * `ComponentList` slot. Only ever set on assistant messages.
    */
   displayComponents: ReactNode | null;
+  /**
+   * Sub-agent cards for the turn's `delegate` calls, pre-rendered by the
+   * `DelegateList` slot. Only ever set on assistant messages; optional so
+   * existing custom slots and callers keep compiling.
+   */
+  delegates?: ReactNode | null;
 }
 
 export interface StreamingMessageSlotProps {
@@ -72,6 +79,8 @@ export interface StreamingMessageSlotProps {
   files: ReactNode | null;
   /** Components the turn has asked for so far, pre-rendered by `ComponentList`. */
   displayComponents: ReactNode | null;
+  /** Sub-agent cards the turn has started so far, pre-rendered by `DelegateList`. */
+  delegates?: ReactNode | null;
 }
 
 export interface MarkdownSlotProps {
@@ -186,6 +195,18 @@ export interface ComponentListSlotProps {
 }
 
 /**
+ * Sub-agent cards: one per `delegate` call the turn made, in call order.
+ * Never empty when rendered. Each carries the task's first line, a status
+ * and — from history only — a step count; deliberately no link, cost or
+ * answer text. `delegateStatusLabel`/`delegateStepsLabel` from
+ * `@uraiai/chat-widget-core/headless` give English strings; the default
+ * uses `labels.delegateStatus`/`labels.delegateSteps`.
+ */
+export interface DelegateListSlotProps {
+  delegates: MessageDelegate[];
+}
+
+/**
  * What a registered display component receives. A uraiJS tool asks for it
  * with `meta.urai.sendCommand(thread_id, { command: "displayComponent",
  * component, props })`.
@@ -262,6 +283,7 @@ export interface UraiChatComponents {
   AttachmentList: ComponentType<AttachmentListSlotProps>;
   FileList: ComponentType<FileListSlotProps>;
   ComponentList: ComponentType<ComponentListSlotProps>;
+  DelegateList: ComponentType<DelegateListSlotProps>;
   Composer: ComponentType<ComposerSlotProps>;
   ComposerInput: ComponentType<
     React.TextareaHTMLAttributes<HTMLTextAreaElement>

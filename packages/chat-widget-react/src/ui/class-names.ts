@@ -50,6 +50,8 @@ export interface UraiChatClassNames {
   fileAttachment?: ClassValue;
   fileList?: ClassValue;
   componentList?: ClassValue;
+  delegateList?: ClassValue;
+  delegate?: StatefulClass<{ status: string }>;
   composer?: ClassValue;
   composerInput?: ClassValue;
   sendButton?: ClassValue;

@@ -6,6 +6,7 @@ import { ICONS } from "./icons";
 import { renderMarkdown } from "./markdown";
 import type {
   MessageComponent,
+  MessageDelegate,
   ServerMessage,
   ThreadSummary,
   Transport,
@@ -29,6 +30,11 @@ import {
   workspaceFileName,
 } from "./headless/files";
 import { parseDisplayComponent } from "./headless/components";
+import {
+  createDelegateList,
+  delegateStatusLabel,
+  delegateStepsLabel,
+} from "./headless/delegates";
 import {
   filterThreads,
   groupByRecency,
@@ -1052,6 +1058,87 @@ export function mountWidget(args: MountArgs): MountedWidget {
     };
   }
 
+  // ---- Sub-agent cards ---------------------------------------------------
+
+  /**
+   * One card per `delegate` call: "Sub-agent", the task's first line, a
+   * status, and a step count once known. Built with `textContent` only —
+   * the label is model output.
+   */
+  function buildDelegateCard(d: MessageDelegate): HTMLElement {
+    const card = document.createElement("div");
+    card.className = "ucw-delegate";
+    card.dataset.status = d.status;
+    card.dataset.delegateId = d.id;
+
+    const icon = document.createElement("span");
+    icon.className = "ucw-delegate-icon";
+    icon.setAttribute("aria-hidden", "true");
+
+    const main = document.createElement("div");
+    main.className = "ucw-delegate-main";
+    const head = document.createElement("div");
+    head.className = "ucw-delegate-head";
+    const kind = document.createElement("span");
+    kind.className = "ucw-delegate-kind";
+    kind.textContent = "Sub-agent";
+    const status = document.createElement("span");
+    status.className = "ucw-delegate-status";
+    status.textContent = delegateStatusLabel(d.status);
+    head.append(kind, status);
+    const steps = delegateStepsLabel(d.steps);
+    if (steps) {
+      const stepsEl = document.createElement("span");
+      stepsEl.className = "ucw-delegate-steps";
+      stepsEl.textContent = steps;
+      head.appendChild(stepsEl);
+    }
+    main.appendChild(head);
+    if (d.label) {
+      const label = document.createElement("div");
+      label.className = "ucw-delegate-label";
+      label.textContent = d.label;
+      label.title = d.label;
+      main.appendChild(label);
+    }
+
+    card.append(icon, main);
+    if (d.status === "running") card.setAttribute("aria-busy", "true");
+    return card;
+  }
+
+  /**
+   * The sub-agent row on an assistant bubble, created on the first card.
+   * It sits right below the reply text — above components and files
+   * whichever arrives first — so a bubble reads text → sub-agents →
+   * components → files live and in history alike. Re-rendered whole on
+   * each change: a turn has a handful of cards at most.
+   */
+  function makeDelegateList(bubble: HTMLDivElement) {
+    let row: HTMLDivElement | null = null;
+    return {
+      set(items: MessageDelegate[]) {
+        if (items.length === 0) {
+          row?.remove();
+          row = null;
+          return;
+        }
+        if (!row) {
+          row = document.createElement("div");
+          row.className = "ucw-delegates";
+          row.setAttribute("role", "group");
+          row.setAttribute("aria-label", "Sub-agents");
+          bubble.insertBefore(
+            row,
+            bubble.querySelector(":scope > .ucw-components, :scope > .ucw-files"),
+          );
+        }
+        row.replaceChildren(...items.map(buildDelegateCard));
+        scrollToBottom();
+      },
+    };
+  }
+
   // ---- Rich components ---------------------------------------------------
 
   /**
@@ -1408,7 +1495,10 @@ export function mountWidget(args: MountArgs): MountedWidget {
         appendUserBubble(m.content, atts);
       } else if (
         m.role === "assistant" &&
-        (m.content || m.files?.length || m.components?.length)
+        (m.content ||
+          m.files?.length ||
+          m.components?.length ||
+          m.delegates?.length)
       ) {
         // Pass per-message tool-call summaries so <urai-tool-call>
         // markers render as visible chips with the LLM-generated
@@ -1417,6 +1507,9 @@ export function mountWidget(args: MountArgs): MountedWidget {
           m.content,
           m.tool_call_summaries ?? undefined,
         );
+        if (m.delegates?.length) {
+          makeDelegateList(bubble).set(createDelegateList(m.delegates).snapshot());
+        }
         if (m.components?.length) {
           const components = makeComponentList(bubble);
           for (const c of m.components) components.add(c);
@@ -1516,6 +1609,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
       const reasoning = makeReasoningSection(bubble);
       const files = makeFileList(bubble, threadId);
       const components = makeComponentList(bubble);
+      const delegateModel = createDelegateList();
+      const delegates = makeDelegateList(bubble);
       let bubbleAttached = false;
       let buf = "";
 
@@ -1548,14 +1643,17 @@ export function mountWidget(args: MountArgs): MountedWidget {
           onFirstSignal();
           components.add(component);
         },
-        onToolCallStarted({ id, fn_name }) {
+        onToolCallStarted(call) {
           if (destroyed) return;
           onFirstSignal();
-          tools.start(id, fn_name);
+          tools.start(call.id, call.fn_name);
+          if (delegateModel.start(call)) delegates.set(delegateModel.snapshot());
         },
-        onToolCallCompleted({ id, files: listing }) {
+        onToolCallCompleted(call) {
+          const { id, files: listing } = call;
           if (destroyed) return;
           tools.complete(id);
+          if (delegateModel.complete(call)) delegates.set(delegateModel.snapshot());
           // Each listing is the whole workspace: it replaces the row.
           if (listing) {
             onFirstSignal();

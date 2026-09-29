@@ -4,6 +4,7 @@
 import type { ResolvedConfig } from "../config";
 import type {
   MessageComponent,
+  MessageDelegate,
   ThreadSummary,
   WidgetAttachment,
   WidgetMessageAttachment,
@@ -57,6 +58,12 @@ export interface ChatMessage {
    * `component`; skip a name nothing is registered for.
    */
   components?: MessageComponent[];
+  /**
+   * Sub-agent cards: one per `delegate` call the turn made, in call order.
+   * Render them below the reply text. Build/update them with the helpers
+   * in `headless/delegates`.
+   */
+  delegates?: MessageDelegate[];
 }
 
 /**
@@ -99,6 +106,12 @@ export interface StreamSlice {
   files: WorkspaceFile[];
   /** Components a tool has asked this turn to display so far. Append-only. */
   components: MessageComponent[];
+  /**
+   * Sub-agent cards for this turn's `delegate` calls so far, in call order.
+   * A card is added `running` on the call's start and settled on its
+   * completion; `steps` stays 0 until the turn is reloaded from history.
+   */
+  delegates: MessageDelegate[];
   /**
    * False until the first real model output. Views show a "thinking"
    * placeholder instead of an empty bubble while this is false.

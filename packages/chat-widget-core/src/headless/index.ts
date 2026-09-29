@@ -78,6 +78,16 @@ export {
 } from "./files";
 
 export {
+  createDelegateList,
+  DELEGATE_TOOL,
+  delegateCompletionStatus,
+  delegateStatusLabel,
+  delegateStepsLabel,
+  isDelegateRunning,
+  type DelegateListModel,
+} from "./delegates";
+
+export {
   DISPLAY_COMPONENT_COMMAND,
   parseDisplayComponent,
 } from "./components";
@@ -99,8 +109,12 @@ export type { ThreadChangeReason } from "../events";
 export { WidgetHttpError } from "../transport";
 
 export type {
+  DelegateStatus,
   MessageComponent,
+  MessageDelegate,
   ServerMessage,
+  ToolCallCompletedEvent,
+  ToolCallStartedEvent,
   ThreadSummary,
   WidgetAttachment,
   WidgetMessageAttachment,

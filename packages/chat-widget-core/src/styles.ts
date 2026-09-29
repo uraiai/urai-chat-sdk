@@ -426,6 +426,66 @@ export const baseStyles = `
   gap: 8px;
   margin-top: 8px;
 }
+/* Sub-agent cards: one per delegate call, below the reply text. */
+.ucw-delegates {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ucw-delegate {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--ucw-border);
+  border-radius: 8px;
+  background: var(--ucw-background);
+  color: var(--ucw-text);
+  font-size: 12px;
+  line-height: 1.4;
+  min-width: 0;
+}
+.ucw-delegate-icon {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--ucw-muted);
+}
+.ucw-delegate[data-status="running"] .ucw-delegate-icon {
+  background: none;
+  border: 2px solid var(--ucw-border);
+  border-top-color: var(--ucw-primary);
+  animation: ucw-delegate-spin 0.8s linear infinite;
+}
+.ucw-delegate[data-status="completed"] .ucw-delegate-icon { background: var(--ucw-primary); }
+.ucw-delegate[data-status="failed"] .ucw-delegate-icon,
+.ucw-delegate[data-status="error"] .ucw-delegate-icon { background: #dc2626; }
+.ucw-delegate[data-status="timeout"] .ucw-delegate-icon { background: #d97706; }
+.ucw-delegate-main { flex: 1 1 auto; min-width: 0; }
+.ucw-delegate-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ucw-muted);
+  font-size: 11px;
+}
+.ucw-delegate-kind { font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.ucw-delegate-status::before { content: "·"; margin-right: 6px; }
+.ucw-delegate-steps { margin-left: auto; white-space: nowrap; }
+.ucw-delegate[data-status="failed"] .ucw-delegate-status,
+.ucw-delegate[data-status="error"] .ucw-delegate-status { color: #dc2626; }
+.ucw-delegate-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes ucw-delegate-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ucw-delegate[data-status="running"] .ucw-delegate-icon { animation: none; }
+}
 .ucw-attachment-image {
   display: block;
   max-width: 220px;

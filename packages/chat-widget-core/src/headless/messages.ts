@@ -3,11 +3,13 @@
  * building the optimistic rows a turn produces.
  */
 import type { ServerMessage } from "../transport";
+import { createDelegateList } from "./delegates";
 import type { ChatAttachment, ChatMessage, StreamSlice } from "./types";
 
 /**
  * Server history → view rows. System messages are dropped, and an
- * assistant turn with no content, files or components is skipped: it
+ * assistant turn with no content, files, components or sub-agent
+ * cards is skipped: it
  * carries nothing to show.
  */
 export function hydrateHistory(messages: ServerMessage[]): ChatMessage[] {
@@ -29,7 +31,10 @@ export function hydrateHistory(messages: ServerMessage[]): ChatMessage[] {
       });
     } else if (
       m.role === "assistant" &&
-      (m.content || m.files?.length || m.components?.length)
+      (m.content ||
+        m.files?.length ||
+        m.components?.length ||
+        m.delegates?.length)
     ) {
       out.push({
         id: m.id,
@@ -41,6 +46,9 @@ export function hydrateHistory(messages: ServerMessage[]): ChatMessage[] {
         toolSummaries: m.tool_call_summaries ?? undefined,
         files: m.files?.length ? m.files : undefined,
         components: m.components?.length ? m.components : undefined,
+        delegates: m.delegates?.length
+          ? createDelegateList(m.delegates).snapshot()
+          : undefined,
       });
     }
   }
@@ -57,5 +65,6 @@ export function commitStream(stream: StreamSlice): ChatMessage {
     attachments: [],
     files: stream.files.length > 0 ? stream.files : undefined,
     components: stream.components.length > 0 ? stream.components : undefined,
+    delegates: stream.delegates.length > 0 ? stream.delegates : undefined,
   };
 }

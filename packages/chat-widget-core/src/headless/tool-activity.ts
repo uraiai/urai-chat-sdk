@@ -19,6 +19,7 @@ export function prettyToolName(fnName: string): string {
     write: "Writing a script",
     execute: "Running code",
     run_code: "Running code",
+    delegate: "Delegating to a sub-agent",
   };
   if (KNOWN[fnName]) return KNOWN[fnName];
   const words = fnName.replace(/[_-]+/g, " ").trim();

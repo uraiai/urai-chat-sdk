@@ -1,7 +1,12 @@
 "use client";
 
 import type { ResolvedConfig } from "@uraiai/chat-widget-core";
-import type { MessageRole } from "@uraiai/chat-widget-core/headless";
+import {
+  delegateStatusLabel,
+  delegateStepsLabel,
+  type DelegateStatus,
+  type MessageRole,
+} from "@uraiai/chat-widget-core/headless";
 
 /**
  * Every user-visible string in one bag.
@@ -50,6 +55,14 @@ export interface UraiChatLabels {
   openImage(fileName: string): string;
   downloadAllFiles: string;
   downloadingFiles: string;
+
+  /** The kind line on a sub-agent card. */
+  subAgent: string;
+  /** Accessible name for a turn's group of sub-agent cards. */
+  subAgents: string;
+  delegateStatus(status: DelegateStatus): string;
+  /** Step count text, or `null` to show none (the count is not known). */
+  delegateSteps(steps: number): string | null;
 
   footerText: string;
   disclaimer: string;
@@ -125,6 +138,11 @@ export const DEFAULT_LABELS: UraiChatLabels = {
   openImage: (f) => `Open ${f}`,
   downloadAllFiles: "Download all files",
   downloadingFiles: "Preparing download…",
+
+  subAgent: "Sub-agent",
+  subAgents: "Sub-agents",
+  delegateStatus: delegateStatusLabel,
+  delegateSteps: delegateStepsLabel,
 
   footerText: "",
   disclaimer: "",

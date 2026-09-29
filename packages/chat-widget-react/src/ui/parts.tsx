@@ -192,6 +192,10 @@ export function Message({ id, isLast = false }: { id: string; isLast?: boolean }
   const displayComponents = message.components?.length ? (
     <ComponentList components={message.components} />
   ) : null;
+  const DelegateList = components.DelegateList;
+  const delegates = message.delegates?.length ? (
+    <DelegateList delegates={message.delegates} />
+  ) : null;
 
   if (message.role === "user") {
     const Slot = components.UserMessage;
@@ -222,6 +226,7 @@ export function Message({ id, isLast = false }: { id: string; isLast?: boolean }
         attachments={attachments}
         files={files}
         displayComponents={displayComponents}
+        delegates={delegates}
       />
     </MessageProvider>
   );
@@ -270,6 +275,7 @@ export function StreamingMessage() {
   const ToolActivity = components.ToolActivity;
   const Files = components.FileList;
   const ComponentList = components.ComponentList;
+  const DelegateList = components.DelegateList;
   const bodyId = `${idPrefix}-reasoning`;
   const expanded = stream.reasoning?.sealed ? reasoningOpen : true;
 
@@ -304,6 +310,11 @@ export function StreamingMessage() {
       displayComponents={
         stream.components.length > 0 ? (
           <ComponentList components={stream.components} />
+        ) : null
+      }
+      delegates={
+        stream.delegates.length > 0 ? (
+          <DelegateList delegates={stream.delegates} />
         ) : null
       }
     />
