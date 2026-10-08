@@ -24,6 +24,7 @@ export {
   filterThreads,
   groupByRecency,
   relativeTime,
+  threadPreview,
   type ThreadGroup,
 } from "./thread-list";
 
@@ -86,6 +87,23 @@ export {
   isDelegateRunning,
   type DelegateListModel,
 } from "./delegates";
+
+export { splitStableTail } from "./stable-tail";
+
+// Presentation vocabulary shared by the React and Vue inline views.
+export {
+  DEFAULT_LABELS,
+  resolveLabels,
+  type UraiChatLabels,
+  type UraiChatLabelsInput,
+} from "./labels";
+export {
+  cx,
+  resolveClass,
+  type ClassValue,
+  type StatefulClass,
+  type UraiChatClassNames,
+} from "./class-names";
 
 export {
   DISPLAY_COMPONENT_COMMAND,

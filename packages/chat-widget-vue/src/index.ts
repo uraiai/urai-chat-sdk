@@ -34,6 +34,12 @@ export type {
   WidgetVars,
 } from "@uraiai/chat-widget-core";
 
+export {
+  vueComponentRenderer,
+  vueComponentRenderers,
+  type VueComponentRendererOptions,
+} from "./component-renderer";
+
 export const UraiChatWidget = defineComponent({
   name: "UraiChatWidget",
   props: {

@@ -4,16 +4,16 @@ npm packages for embedding Urai chat in React, Vue, and Svelte apps.
 
 Two shapes are available. The **floating widget** is the pre-built UI the
 script-tag embed mounts, wrapped as a typed component — a launcher and popup
-panel, sealed off in a shadow root. In React there is also a **modular chat**
-(`@uraiai/chat-widget-react/ui`): inline, built from native React components
-you can replace one by one, for a chat that lives inside your product and
-should look like it.
+panel, sealed off in a shadow root. In React and Vue there is also a
+**modular chat** (`@uraiai/chat-widget-react/ui`, `@uraiai/chat-widget-vue/ui`):
+inline, built from native components you can replace one by one, for a chat
+that lives inside your product and should look like it.
 
 | Package | Framework |
 |---|---|
 | [`@uraiai/chat-widget-core`](packages/chat-widget-core) | Framework-agnostic engine (`createUraiChatWidget`), plus `/headless` for the state machine alone |
 | [`@uraiai/chat-widget-react`](packages/chat-widget-react) | React 18 / 19 — floating widget **and** the modular `/ui` chat |
-| [`@uraiai/chat-widget-vue`](packages/chat-widget-vue) | Vue 3 |
+| [`@uraiai/chat-widget-vue`](packages/chat-widget-vue) | Vue 3 — floating widget **and** the modular `/ui` chat |
 | [`@uraiai/chat-widget-svelte`](packages/chat-widget-svelte) | Svelte 5 |
 
 ## Before you start: allow your origin
@@ -53,8 +53,9 @@ import { UraiChat } from "@uraiai/chat-widget-react/ui";
 ```
 
 See the [React README](packages/chat-widget-react) for slots, tokens, hooks and
-the compound API, and the per-package READMEs for Vue, Svelte and the vanilla
-core.
+the compound API, the [Vue README](packages/chat-widget-vue) for the same in
+Vue (`<UraiChat>` from `@uraiai/chat-widget-vue/ui`), and the per-package
+READMEs for Svelte and the vanilla core.
 
 ## Development
 
@@ -68,18 +69,28 @@ pnpm typecheck
 ### Demo apps
 
 `examples/{react,vue,svelte}-demo` are Vite apps wired to the workspace
-packages, and `examples/react-ui-demo` (port 5178) is a harness for the
-modular chat — vars, identity switching, three styling levels and host dark
-mode. Each needs a `.env.local`:
+packages, and `examples/react-ui-demo` (port 5178) and `examples/vue-ui-demo`
+(port 5179) are harnesses for the modular chat — vars, identity switching,
+three styling levels, display components and host dark mode. Each needs a
+`.env.local`:
 
 ```
 VITE_URAI_BASE_URL=https://chat.app.urai.dev
 VITE_URAI_WIDGET_TOKEN=<widget token>
 ```
 
-…and the demo origin (`http://localhost:5173` / `5174` / `5175` / `5178`)
-added to the widget's allowed origins. Then `pnpm --filter react-demo dev`, or
-`pnpm --filter react-ui-demo dev`.
+…and the demo origin added to the widget's allowed origins:
+
+| Demo | Port |
+|---|---|
+| `react-demo` | 5173 |
+| `svelte-demo` | 5175 |
+| `vue-demo` | 5177 |
+| `react-ui-demo` | 5178 |
+| `vue-ui-demo` | 5179 |
+
+(5174 is left free for a local chat service.) Then `pnpm --filter react-demo dev`,
+`pnpm --filter react-ui-demo dev`, `pnpm --filter vue-ui-demo dev`, and so on.
 
 ## Releasing
 

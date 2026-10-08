@@ -8,6 +8,30 @@
  */
 import type { ThreadSummary } from "../transport";
 
+const TOOL_CALL_TAG = "urai-tool-call";
+
+/**
+ * Display text for a thread's `last_message_preview`. The server
+ * excerpts the raw message content, so it can carry
+ * `<urai-tool-call>` markers, including one cut off mid-tag by the
+ * excerpt length. Strip them and collapse whitespace; null when
+ * nothing readable is left.
+ */
+export function threadPreview(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  // Same marker shapes as `stripUraiToolCallMarkers` in markdown.ts,
+  // inlined so the headless entry doesn't pull in marked/katex.
+  let text = raw.replace(/<\/?urai-tool-call\b[^>]*>/gi, " ");
+  // A marker truncated by the excerpt: `<urai-tool-call id="12ab` or `<urai-to`.
+  text = text.replace(/<urai-tool-call\b[^>]*$/i, "");
+  const tail = /<\/?([a-z-]+)$/i.exec(text);
+  if (tail && TOOL_CALL_TAG.startsWith(tail[1].toLowerCase())) {
+    text = text.slice(0, tail.index);
+  }
+  text = text.replace(/\s+/g, " ").trim();
+  return text || null;
+}
+
 /** Case-insensitive substring match over title and last-message preview. */
 export function filterThreads(
   items: readonly ThreadSummary[],
@@ -18,7 +42,7 @@ export function filterThreads(
   return items.filter(
     (t) =>
       t.title.toLowerCase().includes(q) ||
-      (t.last_message_preview ?? "").toLowerCase().includes(q),
+      (threadPreview(t.last_message_preview) ?? "").toLowerCase().includes(q),
   );
 }
 

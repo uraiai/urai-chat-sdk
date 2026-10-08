@@ -3,6 +3,7 @@ import {
   filterThreads,
   groupByRecency,
   relativeTime,
+  threadPreview,
 } from "../../src/headless/thread-list";
 import type { ThreadSummary } from "../../src/transport";
 
@@ -107,5 +108,57 @@ describe("filterThreads", () => {
 
   it("returns a copy, never the input array", () => {
     expect(filterThreads(items, "")).not.toBe(items);
+  });
+});
+
+describe("threadPreview", () => {
+  it("passes plain prose through", () => {
+    expect(threadPreview("Where is my refund?")).toBe("Where is my refund?");
+  });
+
+  it("returns null for null, empty or marker-only previews", () => {
+    expect(threadPreview(null)).toBeNull();
+    expect(threadPreview("")).toBeNull();
+    expect(
+      threadPreview(
+        '<urai-tool-call id="a"></urai-tool-call> <urai-tool-call id="b"></urai-tool-call>',
+      ),
+    ).toBeNull();
+  });
+
+  it("strips closed, self-closing and unclosed markers", () => {
+    expect(
+      threadPreview(
+        '<urai-tool-call id="a"></urai-tool-call> <urai-tool-call id="b"/>\n\nPlant 4 has the most volume.',
+      ),
+    ).toBe("Plant 4 has the most volume.");
+    expect(threadPreview('<urai-tool-call id="a"> You are right, sorry.')).toBe(
+      "You are right, sorry.",
+    );
+  });
+
+  it("drops a marker truncated by the excerpt length", () => {
+    expect(
+      threadPreview('Checking now. <urai-tool-call id="a"></urai-tool-call> <urai-tool-call id="122d10d0-7ef6-4'),
+    ).toBe("Checking now.");
+    expect(threadPreview("Checking now. <urai-to")).toBe("Checking now.");
+    expect(threadPreview('Done <urai-tool-call id="a"></urai-tool-c')).toBe("Done");
+  });
+
+  it("leaves other angle-bracket text alone", () => {
+    expect(threadPreview("x <b> y")).toBe("x <b> y");
+    expect(threadPreview("a < b")).toBe("a < b");
+  });
+
+  it("filterThreads does not match marker text", () => {
+    const items = [
+      thread({
+        id: "a",
+        title: "Alerts",
+        last_message_preview: '<urai-tool-call id="a"></urai-tool-call> All clear.',
+      }),
+    ];
+    expect(filterThreads(items, "urai")).toEqual([]);
+    expect(filterThreads(items, "clear").map((t) => t.id)).toEqual(["a"]);
   });
 });

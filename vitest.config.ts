@@ -45,7 +45,16 @@ export default defineConfig({
         test: {
           name: "vue",
           environment: "happy-dom",
-          include: ["packages/chat-widget-vue/tests/**/*.test.ts"],
+          include: ["packages/chat-widget-vue/tests/*.test.ts"],
+        },
+      },
+      {
+        // The modular `/ui` view renders markdown through DOMPurify, so it
+        // gets jsdom for the reason given above.
+        test: {
+          name: "vue-ui",
+          environment: "jsdom",
+          include: ["packages/chat-widget-vue/tests/ui/**/*.test.ts"],
         },
       },
       {

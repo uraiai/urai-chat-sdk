@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { threadPreview } from "@uraiai/chat-widget-core/headless";
 import { MessageProvider, usePresentation } from "./context";
 import { cx } from "./class-names";
 import {
@@ -142,7 +143,7 @@ export function ThreadSwitcher({ onClose }: { onClose?: () => void }) {
                     thread={t}
                     isActive={t.id === threads.activeThreadId}
                     title={t.title || labels.untitledThread}
-                    preview={t.last_message_preview}
+                    preview={threadPreview(t.last_message_preview)}
                     relativeTime={threads.formatRelativeTime(
                       t.last_message_at ?? t.updated_at,
                     )}

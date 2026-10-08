@@ -39,6 +39,7 @@ import {
   filterThreads,
   groupByRecency,
   relativeTime,
+  threadPreview,
 } from "./headless/thread-list";
 
 interface MountArgs {
@@ -635,10 +636,11 @@ export function mountWidget(args: MountArgs): MountedWidget {
     title.className = "ucw-thread-title";
     title.textContent = t.title || "Untitled";
     item.appendChild(title);
-    if (t.last_message_preview) {
+    const previewText = threadPreview(t.last_message_preview);
+    if (previewText) {
       const preview = document.createElement("div");
       preview.className = "ucw-thread-preview";
-      preview.textContent = t.last_message_preview;
+      preview.textContent = previewText;
       item.appendChild(preview);
     }
     const meta = document.createElement("div");

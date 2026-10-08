@@ -1,10 +1,12 @@
 {
   "name": "@uraiai/chat-widget-vue",
-  "version": "0.1.19",
-  "description": "Vue 3 component for the Urai chat widget",
+  "version": "0.1.20",
+  "description": "Vue 3 components for the Urai chat widget: the floating widget and the modular inline chat",
   "license": "MIT",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "*.css"
+  ],
   "files": [
     "dist"
   ],
@@ -13,7 +15,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./ui": {
+      "types": "./dist/ui.d.ts",
+      "import": "./dist/ui.js"
+    },
+    "./styles.css": "./dist/styles.css"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

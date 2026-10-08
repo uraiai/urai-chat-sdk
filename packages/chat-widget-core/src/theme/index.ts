@@ -38,5 +38,9 @@ export {
   type ThemeStyle,
 } from "./apply";
 
+// The inline views' stylesheet (React and Vue `/ui`), shared so the two
+// packages emit the same CSS and one injection serves both.
+export { componentCss, ensureStyles, stylesheet } from "./inline-styles";
+
 // The legacy `--ucw-*` applier, still used by the shadow-DOM widget.
 export { applyTheme } from "./legacy-vars";

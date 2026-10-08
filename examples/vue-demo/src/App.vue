@@ -36,7 +36,7 @@ function setVarsNow() {
       <p>
         Set <code>VITE_URAI_WIDGET_TOKEN</code> (and optionally
         <code>VITE_URAI_BASE_URL</code>) in <code>.env.local</code>, then
-        restart. Remember to add <code>http://localhost:5174</code> to the
+        restart. Remember to add <code>http://localhost:5177</code> to the
         widget's allowed origins.
       </p>
     </template>
