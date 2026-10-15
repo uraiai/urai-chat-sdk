@@ -63,6 +63,14 @@ export interface ServerMessage {
    * `tool_call_started` event. Absent when there are none.
    */
   delegates?: MessageDelegate[] | null;
+  /**
+   * Set on the assistant row whose turn is still running, with the
+   * URL to re-attach to: it replays the turn from its start, then
+   * streams the rest. Absent on every other row, and from servers that
+   * predate it.
+   */
+  streaming?: boolean;
+  stream_url?: string | null;
 }
 
 /** Where a sub-agent run got to. `running` until its tool call completes. */
@@ -455,18 +463,30 @@ export class Transport {
    * The handler receives parsed event payloads. The returned function
    * tears down the EventSource.
    *
-   * NOTE: EventSource doesn't support custom headers; the path-embedded
-   * widget token is the auth carrier. The X-Widget-User-Id is supplied
-   * by the prior send call which already established thread ownership.
+   * EventSource can't send X-Widget-User-Id, so pass the server's
+   * `stream_url` (from the send response, or a still-streaming row in
+   * `listMessages`) whenever there is one: it carries a ticket minted
+   * for this visitor, and only with it does the stream replay what was
+   * published before it opened, or end a turn that is already over.
+   * Without it the stream is live-only, as before tickets existed.
+   *
+   * Each event carries an SSE id, so the browser's own reconnect
+   * resumes after the last one it saw.
    */
   streamMessage(
     messageId: string,
     handlers: StreamHandlers,
+    streamUrl?: string,
   ): () => void {
-    // Built locally (the server's `stream_url` is ignored) so the
-    // configured baseUrl always wins even if the server returns a
+    // Only the server's path and query are used, under the configured
+    // baseUrl, so the baseUrl always wins even if the server returns a
     // relative path.
-    const path = `/api/widget/v1/${this.opts.widgetToken}/messages/${messageId}/stream`;
+    const fallback = `/api/widget/v1/${this.opts.widgetToken}/messages/${messageId}/stream`;
+    let path = fallback;
+    if (streamUrl) {
+      const parsed = new URL(streamUrl, "http://server.invalid");
+      path = `${parsed.pathname}${parsed.search}`;
+    }
     const url = `${this.opts.baseUrl}${path}`;
     const es = new EventSource(url, { withCredentials: false });
 
@@ -507,6 +527,16 @@ export class Transport {
     es.addEventListener("command", (e) => {
       try {
         handlers.onCommand?.(JSON.parse((e as MessageEvent).data));
+      } catch {
+        // malformed command payload — ignore
+      }
+    });
+    // A command sent before this stream opened, replayed while catching
+    // up. Already acted on by whoever was watching then, so it must not
+    // reach the host page again — a reload must not re-fire a `navigate`.
+    es.addEventListener("command_replay", (e) => {
+      try {
+        handlers.onCommandReplay?.(JSON.parse((e as MessageEvent).data));
       } catch {
         // malformed command payload — ignore
       }
@@ -581,6 +611,8 @@ export interface StreamHandlers {
   onChunk?: (chunk: string) => void;
   onReasoning?: (chunk: string) => void;
   onCommand?: (command: unknown) => void;
+  /** A command replayed while catching up — never forwarded to the host. */
+  onCommandReplay?: (command: unknown) => void;
   onToolCallStarted?: (call: ToolCallStartedEvent) => void;
   onToolCallCompleted?: (call: ToolCallCompletedEvent) => void;
   onToolCallSummary?: (call: { id: string; summary: string }) => void;

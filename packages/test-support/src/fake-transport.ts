@@ -159,8 +159,11 @@ export function makeFakeTransport(
       return { blob: new Blob(["zip"]), fileName: `${threadId}.zip` };
     },
 
-    streamMessage(messageId, h) {
-      record("streamMessage", messageId);
+    streamMessage(messageId, h, streamUrl) {
+      // The URL is recorded only when given, so call logs from callers
+      // that never pass one keep their shape.
+      if (streamUrl === undefined) record("streamMessage", messageId);
+      else record("streamMessage", messageId, streamUrl);
       handlers = h;
       closed = false;
       return () => {

@@ -54,8 +54,16 @@ export interface ChatTransport {
   fetchThreadFile(threadId: string, path: string): Promise<Blob>;
   fetchThreadArchive(threadId: string): Promise<ThreadArchive>;
 
-  /** Returns a teardown function that closes the stream. */
-  streamMessage(messageId: string, handlers: StreamHandlers): () => void;
+  /**
+   * Returns a teardown function that closes the stream. `streamUrl` is
+   * the server's `stream_url` for the message, when it gave one; it
+   * carries the ticket that lets the stream replay the turn so far.
+   */
+  streamMessage(
+    messageId: string,
+    handlers: StreamHandlers,
+    streamUrl?: string,
+  ): () => void;
 }
 
 /**

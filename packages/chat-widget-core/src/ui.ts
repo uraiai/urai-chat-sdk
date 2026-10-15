@@ -259,10 +259,15 @@ export function mountWidget(args: MountArgs): MountedWidget {
     if (!destroyed) args.emit(event);
   };
 
+  /**
+   * Abandon the turn streaming into the view, if any. The composer was
+   * held for it, so it is released too.
+   */
   function closeActiveStream() {
     if (activeStreamClose) {
       activeStreamClose();
       activeStreamClose = null;
+      if (!destroyed) setSending(false);
     }
   }
 
@@ -1477,13 +1482,166 @@ export function mountWidget(args: MountArgs): MountedWidget {
     return result.thread_id;
   }
 
+  /**
+   * Stream an assistant turn into a new bubble: one the visitor just
+   * sent, or one still running when history loaded — whose stream
+   * replays the turn so far first, so both render the same.
+   */
+  function consumeStream(
+    threadId: string,
+    messageId: string,
+    streamUrl: string | undefined,
+    thinking: { remove(): void },
+  ) {
+    if (!transport) return;
+    // Build the bubble but don't attach it yet — the thinking pill
+    // stays until the first real model output (chunk OR reasoning).
+    const bubble = document.createElement("div");
+    bubble.className = "ucw-bubble ucw-assistant";
+    // Stream into a dedicated content child so reasoning + tool
+    // activity rows sitting alongside it survive each markdown
+    // re-render.
+    const contentEl = document.createElement("div");
+    bubble.appendChild(contentEl);
+    const tools = makeToolActivityTracker(bubble);
+    const reasoning = makeReasoningSection(bubble);
+    const files = makeFileList(bubble, threadId);
+    const components = makeComponentList(bubble);
+    const delegateModel = createDelegateList();
+    const delegates = makeDelegateList(bubble);
+    let bubbleAttached = false;
+    let buf = "";
+
+    const onFirstSignal = () => {
+      if (bubbleAttached) return;
+      bubbleAttached = true;
+      thinking.remove();
+      body.appendChild(bubble);
+      scrollToBottom();
+    };
+
+    activeStreamClose = transport.streamMessage(messageId, {
+      onChunk(chunk) {
+        if (destroyed) return;
+        onFirstSignal();
+        if (!buf) reasoning.seal();
+        buf += chunk;
+        contentEl.innerHTML = renderMd(buf);
+        scrollToBottom();
+      },
+      onReasoning(chunk) {
+        if (destroyed) return;
+        onFirstSignal();
+        reasoning.append(chunk);
+      },
+      onCommand(command) {
+        emit({ type: "command", command });
+        const component = parseDisplayComponent(command);
+        if (!component || destroyed) return;
+        onFirstSignal();
+        components.add(component);
+      },
+      onCommandReplay(command) {
+        // Sent before this stream opened and already acted on: rebuild
+        // its component, never hand it to the host again.
+        const component = parseDisplayComponent(command);
+        if (!component || destroyed) return;
+        onFirstSignal();
+        components.add(component);
+      },
+      onToolCallStarted(call) {
+        if (destroyed) return;
+        onFirstSignal();
+        tools.start(call.id, call.fn_name);
+        if (delegateModel.start(call)) delegates.set(delegateModel.snapshot());
+      },
+      onToolCallCompleted(call) {
+        const { id, files: listing } = call;
+        if (destroyed) return;
+        tools.complete(id);
+        if (delegateModel.complete(call)) delegates.set(delegateModel.snapshot());
+        // Each listing is the whole workspace: it replaces the row.
+        if (listing) {
+          onFirstSignal();
+          const fresh = freshFiles(listing, shownFileVersions);
+          files.set(fresh);
+          if (fresh.length > 0) syncArchiveButton(true);
+        }
+      },
+      onToolCallSummary({ id, summary }) {
+        if (destroyed) return;
+        tools.setSummary(id, summary);
+      },
+      onComplete(msg) {
+        if (destroyed) return;
+        onFirstSignal();
+        if (msg?.content) {
+          reasoning.seal();
+          buf = msg.content;
+          contentEl.innerHTML = renderMd(buf);
+          scrollToBottom();
+        }
+      },
+      onDone() {
+        activeStreamClose = null;
+        if (destroyed) return;
+        // Race guard: reasoning-only turns still need a visible bubble.
+        onFirstSignal();
+        tools.clear();
+        // What this turn rewrote moves here from earlier messages.
+        const moved = new Set(files.files.map((f) => f.path));
+        if (moved.size > 0) {
+          for (const list of fileLists) {
+            if (list.files.some((f) => moved.has(f.path))) {
+              list.set(list.files.filter((f) => !moved.has(f.path)));
+            }
+          }
+          fileLists.push(files);
+        }
+        for (const f of files.files) shownFileVersions.set(f.path, fileVersion(f));
+        emit({ type: "assistant-reply", content: buf });
+        setSending(false);
+      },
+      onError(err) {
+        activeStreamClose = null;
+        if (destroyed) return;
+        tools.clear();
+        thinking.remove();
+        appendError(err);
+        emit({ type: "error", error: err });
+        setSending(false);
+      },
+    }, streamUrl);
+  }
+
   function renderHistory(messages: ServerMessage[]) {
-    // Every caller has just emptied the transcript.
+    // Every caller has just emptied the transcript, so a turn that was
+    // streaming into it is gone from view.
+    closeActiveStream();
     disposeComponents();
     shownFileVersions.clear();
     fileLists.length = 0;
     renderHistoryMessages(messages);
     syncArchiveButton();
+    resumeRunning(messages);
+  }
+
+  /**
+   * Pick up a turn still running when history loaded — a reload, the
+   * widget reopened, a thread switched to mid-turn. Its `stream_url`
+   * replays the turn so far, then streams the rest.
+   * `renderHistoryMessages` leaves its row out so it isn't shown twice.
+   */
+  function resumeRunning(messages: ServerMessage[]) {
+    // Mid-send (`submit` restoring the cached thread) the visitor's own
+    // turn takes the stream.
+    if (!transport || previewMode || !state.threadId || state.isSending) return;
+    const running = messages.find(
+      (m) => m.role === "assistant" && m.streaming && m.stream_url,
+    );
+    if (!running?.stream_url) return;
+    setSending(true);
+    consumeStream(state.threadId, running.id, running.stream_url, appendThinking());
   }
 
   function renderHistoryMessages(messages: ServerMessage[]) {
@@ -1497,6 +1655,8 @@ export function mountWidget(args: MountArgs): MountedWidget {
         appendUserBubble(m.content, atts);
       } else if (
         m.role === "assistant" &&
+        // A running turn is rebuilt by its stream — see `resumeRunning`.
+        !m.streaming &&
         (m.content ||
           m.files?.length ||
           m.components?.length ||
@@ -1598,116 +1758,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
         state.currentVars,
       );
       if (destroyed) return;
-      // Build the bubble but don't attach it yet — the thinking pill
-      // stays until the first real model output (chunk OR reasoning).
-      const bubble = document.createElement("div");
-      bubble.className = "ucw-bubble ucw-assistant";
-      // Stream into a dedicated content child so reasoning + tool
-      // activity rows sitting alongside it survive each markdown
-      // re-render.
-      const contentEl = document.createElement("div");
-      bubble.appendChild(contentEl);
-      const tools = makeToolActivityTracker(bubble);
-      const reasoning = makeReasoningSection(bubble);
-      const files = makeFileList(bubble, threadId);
-      const components = makeComponentList(bubble);
-      const delegateModel = createDelegateList();
-      const delegates = makeDelegateList(bubble);
-      let bubbleAttached = false;
-      let buf = "";
-
-      const onFirstSignal = () => {
-        if (bubbleAttached) return;
-        bubbleAttached = true;
-        thinking.remove();
-        body.appendChild(bubble);
-        scrollToBottom();
-      };
-
-      activeStreamClose = transport.streamMessage(send.assistant_message_id, {
-        onChunk(chunk) {
-          if (destroyed) return;
-          onFirstSignal();
-          if (!buf) reasoning.seal();
-          buf += chunk;
-          contentEl.innerHTML = renderMd(buf);
-          scrollToBottom();
-        },
-        onReasoning(chunk) {
-          if (destroyed) return;
-          onFirstSignal();
-          reasoning.append(chunk);
-        },
-        onCommand(command) {
-          emit({ type: "command", command });
-          const component = parseDisplayComponent(command);
-          if (!component || destroyed) return;
-          onFirstSignal();
-          components.add(component);
-        },
-        onToolCallStarted(call) {
-          if (destroyed) return;
-          onFirstSignal();
-          tools.start(call.id, call.fn_name);
-          if (delegateModel.start(call)) delegates.set(delegateModel.snapshot());
-        },
-        onToolCallCompleted(call) {
-          const { id, files: listing } = call;
-          if (destroyed) return;
-          tools.complete(id);
-          if (delegateModel.complete(call)) delegates.set(delegateModel.snapshot());
-          // Each listing is the whole workspace: it replaces the row.
-          if (listing) {
-            onFirstSignal();
-            const fresh = freshFiles(listing, shownFileVersions);
-            files.set(fresh);
-            if (fresh.length > 0) syncArchiveButton(true);
-          }
-        },
-        onToolCallSummary({ id, summary }) {
-          if (destroyed) return;
-          tools.setSummary(id, summary);
-        },
-        onComplete(msg) {
-          if (destroyed) return;
-          onFirstSignal();
-          if (msg?.content) {
-            reasoning.seal();
-            buf = msg.content;
-            contentEl.innerHTML = renderMd(buf);
-            scrollToBottom();
-          }
-        },
-        onDone() {
-          activeStreamClose = null;
-          if (destroyed) return;
-          // Race guard: reasoning-only turns still need a visible bubble.
-          onFirstSignal();
-          tools.clear();
-          // What this turn rewrote moves here from earlier messages.
-          const moved = new Set(files.files.map((f) => f.path));
-          if (moved.size > 0) {
-            for (const list of fileLists) {
-              if (list.files.some((f) => moved.has(f.path))) {
-                list.set(list.files.filter((f) => !moved.has(f.path)));
-              }
-            }
-            fileLists.push(files);
-          }
-          for (const f of files.files) shownFileVersions.set(f.path, fileVersion(f));
-          emit({ type: "assistant-reply", content: buf });
-          setSending(false);
-        },
-        onError(err) {
-          activeStreamClose = null;
-          if (destroyed) return;
-          tools.clear();
-          thinking.remove();
-          appendError(err);
-          emit({ type: "error", error: err });
-          setSending(false);
-        },
-      });
+      consumeStream(threadId, send.assistant_message_id, send.stream_url, thinking);
     } catch (e: unknown) {
       thinking.remove();
       const msg = e instanceof Error ? e.message : String(e);

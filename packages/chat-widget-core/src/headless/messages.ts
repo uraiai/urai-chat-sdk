@@ -10,7 +10,8 @@ import type { ChatAttachment, ChatMessage, StreamSlice } from "./types";
  * Server history → view rows. System messages are dropped, and an
  * assistant turn with no content, files, components or sub-agent
  * cards is skipped: it
- * carries nothing to show.
+ * carries nothing to show. So is a turn still `streaming`: its stream
+ * replays it from the start, and a row here too would show it twice.
  */
 export function hydrateHistory(messages: ServerMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [];
@@ -31,6 +32,7 @@ export function hydrateHistory(messages: ServerMessage[]): ChatMessage[] {
       });
     } else if (
       m.role === "assistant" &&
+      !m.streaming &&
       (m.content ||
         m.files?.length ||
         m.components?.length ||

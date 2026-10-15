@@ -100,6 +100,45 @@ describe("Transport.streamMessage", () => {
     expect(es.closed).toBe(true);
   });
 
+  it("uses the server's stream_url, ticket included, under baseUrl", () => {
+    installFakeEventSource();
+    makeTransport().streamMessage(
+      "msg-1",
+      {},
+      `/api/widget/v1/${TOKEN}/messages/msg-1/stream?st=123.abc`,
+    );
+    expect(FakeEventSource.last()!.url).toBe(
+      `https://chat.example.com/api/widget/v1/${TOKEN}/messages/msg-1/stream?st=123.abc`,
+    );
+  });
+
+  it("keeps baseUrl even when the server's stream_url is absolute", () => {
+    installFakeEventSource();
+    makeTransport().streamMessage(
+      "msg-1",
+      {},
+      `http://internal:4545/api/widget/v1/${TOKEN}/messages/msg-1/stream?st=1.x`,
+    );
+    expect(FakeEventSource.last()!.url).toBe(
+      `https://chat.example.com/api/widget/v1/${TOKEN}/messages/msg-1/stream?st=1.x`,
+    );
+  });
+
+  it("routes replayed commands apart from live ones", () => {
+    installFakeEventSource();
+    const live: unknown[] = [];
+    const replayed: unknown[] = [];
+    makeTransport().streamMessage("msg-1", {
+      onCommand: (c) => live.push(c),
+      onCommandReplay: (c) => replayed.push(c),
+    });
+    const es = FakeEventSource.last()!;
+    es.dispatch("command_replay", JSON.stringify({ type: "navigate", to: "/a" }));
+    es.dispatch("command", JSON.stringify({ type: "navigate", to: "/b" }));
+    expect(replayed).toEqual([{ type: "navigate", to: "/a" }]);
+    expect(live).toEqual([{ type: "navigate", to: "/b" }]);
+  });
+
   it("passes null to onComplete when the payload is not JSON", () => {
     installFakeEventSource();
     let completed: unknown = "sentinel";

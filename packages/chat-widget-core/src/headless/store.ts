@@ -340,16 +340,16 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
   }
 
   /**
-   * Fallback for a stream that never ends. If the browser opens (or
-   * reopens) the SSE connection after the turn has finished on the
-   * server, the server holds the connection open and never sends
-   * `complete` or `done`, and the turn would spin forever. So while a
+   * Fallback for a stream that never ends. Older chat-service builds
+   * hold a stream opened after its turn finished open forever, never
+   * sending `complete` or `done`, so the turn would spin. So while a
    * turn streams, history is checked every `turnPollMs`. Once it holds
    * the finished reply, the stream closes, the transcript is reloaded
    * from history and the turn ends as if `done` had arrived.
    *
-   * Interim: remove once chat-service sends `complete` on a stream
-   * opened for an already-finalized message.
+   * Current servers send `complete` (or an error, for a turn that died)
+   * to a stream opened with its `stream_url` at any point, so this is
+   * a safety net for older servers and dropped connections.
    */
   function watchTurn(g: number, threadId: string, messageId: string) {
     const transport = deps.transport;
@@ -446,6 +446,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       const msgs = await deps.transport.listMessages(cached);
       if (g !== gen) return;
       setThread(cached, "restored", { messages: hydrateHistory(msgs) });
+      resumeRunning(g, cached, msgs);
     } catch {
       session.clear();
     }
@@ -528,16 +529,34 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       forceNewOnNextCreate: false,
     });
     session.save(threadId);
+    resumeRunning(g, threadId, history.msgs);
   }
 
   // ---------------------------------------------------------------
   // Streaming
   // ---------------------------------------------------------------
 
+  /**
+   * Pick up a turn that was still running when history loaded — a
+   * reload, the widget reopened, a thread switched to mid-turn. The
+   * server marks its row `streaming` with a `stream_url` that replays
+   * the turn so far and then streams the rest, so it renders exactly as
+   * if the visitor had watched it from the start. `hydrateHistory`
+   * leaves that row out; the stream rebuilds it.
+   */
+  function resumeRunning(g: number, threadId: string, msgs: ServerMessage[]) {
+    if (g !== gen || state.status !== "idle" || state.threadId !== threadId) return;
+    const running = msgs.find(
+      (m) => m.role === "assistant" && m.streaming && m.stream_url,
+    );
+    if (running?.stream_url) consumeStream(g, threadId, running.id, running.stream_url);
+  }
+
   function consumeStream(
     g: number,
     threadId: string,
     assistantMessageId: string,
+    streamUrl?: string,
   ) {
     if (!deps.transport) return;
     const tools = createToolActivity();
@@ -608,6 +627,15 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         attach();
         patchStream({ components: [...state.stream.components, component] });
       },
+      onCommandReplay(command) {
+        // Sent before this stream opened and already acted on by whoever
+        // was watching then: rebuild its component, but never hand it to
+        // the host again — a reload must not re-fire a `navigate`.
+        const component = parseDisplayComponent(command);
+        if (!component || g !== gen || !state.stream) return;
+        attach();
+        patchStream({ components: [...state.stream.components, component] });
+      },
       onToolCallStarted(call) {
         if (g !== gen) return;
         attach();
@@ -671,7 +699,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         pushError(err);
         emit({ type: "error", error: err });
       },
-    });
+    }, streamUrl);
     watchTurn(g, threadId, assistantMessageId);
   }
 
@@ -760,7 +788,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         state.vars,
       );
       if (g !== gen) return;
-      consumeStream(g, threadId, sent.assistant_message_id);
+      consumeStream(g, threadId, sent.assistant_message_id, sent.stream_url);
     } catch (e: unknown) {
       if (g !== gen) return;
       const msg = e instanceof Error ? e.message : String(e);
@@ -942,8 +970,9 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       session.save(threadId);
       try {
         const msgs = await deps.transport.listMessages(threadId);
-        if (g !== gen) return;
+        if (g !== gen || state.threadId !== threadId) return;
         set({ messages: hydrateHistory(msgs) });
+        resumeRunning(g, threadId, msgs);
       } catch (e) {
         if (g !== gen) return;
         pushError(e instanceof Error ? e.message : String(e));
