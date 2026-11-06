@@ -177,6 +177,7 @@ export {
   DefaultThreadItem,
   DefaultThreadSwitcher,
   DefaultToolActivity,
+  DefaultToolApproval,
   DefaultToolCallCard,
   DefaultUserMessage,
 } from "./components/defaults";

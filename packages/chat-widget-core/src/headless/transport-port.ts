@@ -17,6 +17,7 @@ import type {
   ThreadSummary,
   WidgetAttachment,
 } from "../transport";
+import type { ClientHelloWire, ClientToolResultWire } from "./client-tools";
 
 export interface ChatTransport {
   /** Re-scope subsequent requests after the embedder changes visitor identity. */
@@ -47,7 +48,15 @@ export interface ChatTransport {
     content: string,
     attachments?: WidgetAttachment[],
     vars?: Record<string, unknown> | null,
+    client?: ClientHelloWire | null,
   ): Promise<SendMessageResult>;
+
+  /**
+   * Client tools (optional, so fakes and older transports still satisfy the
+   * port). Without them a client tool call is simply never run.
+   */
+  claimToolCall?(callId: string, instance: string): Promise<boolean>;
+  postToolCallResult?(callId: string, body: ClientToolResultWire): Promise<boolean>;
 
   uploadAttachment(file: File): Promise<WidgetAttachment>;
   fetchAttachment(messageId: string, attachmentId: string): Promise<Blob>;

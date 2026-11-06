@@ -26,6 +26,13 @@ export interface FakeTransportOptions {
   missingThreads?: string[];
   /** Throw from a named method to exercise a failure branch. */
   fail?: Partial<Record<keyof ChatTransport, Error>>;
+  /**
+   * Whether a client tool claim wins. Default: the first claim of each call
+   * id wins and later ones lose, as the server behaves.
+   */
+  claimWins?: (callId: string, instance: string) => boolean;
+  /** Leave out claim/result entirely, like a transport that predates them. */
+  noClientTools?: boolean;
 }
 
 export interface FakeTransport extends ChatTransport {
@@ -124,8 +131,11 @@ export function makeFakeTransport(
       return opts.messages?.[threadId] ?? [];
     },
 
-    async sendMessage(threadId, content, attachments, vars) {
-      record("sendMessage", threadId, content, attachments, vars);
+    async sendMessage(threadId, content, attachments, vars, client) {
+      // `client` is recorded only when sent, so call logs from hosts without
+      // client tools keep their four-argument shape.
+      if (client == null) record("sendMessage", threadId, content, attachments, vars);
+      else record("sendMessage", threadId, content, attachments, vars, client);
       const n = ++messageSeq;
       return {
         user_message_id: `u${n}`,
@@ -171,6 +181,21 @@ export function makeFakeTransport(
       };
     },
   };
+
+  if (!opts.noClientTools) {
+    const claimed = new Set<string>();
+    t.claimToolCall = async (callId, instance) => {
+      record("claimToolCall", callId, instance);
+      if (opts.claimWins) return opts.claimWins(callId, instance);
+      if (claimed.has(callId)) return false;
+      claimed.add(callId);
+      return true;
+    };
+    t.postToolCallResult = async (callId, body) => {
+      record("postToolCallResult", callId, body);
+      return true;
+    };
+  }
 
   return t;
 }

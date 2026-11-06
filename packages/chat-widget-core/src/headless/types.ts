@@ -1,6 +1,7 @@
 /**
  * The state vocabulary shared by every view. No logic lives here.
  */
+import type { PendingApproval } from "./client-tools";
 import type { ResolvedConfig } from "../config";
 import type {
   MessageComponent,
@@ -178,6 +179,12 @@ export interface ChatState {
    * for the seconds that can take.
    */
   archive: "idle" | "downloading";
+  /**
+   * Client tool calls waiting on the inline approval card
+   * (`clientTools.approve: "inline"`), oldest first. Resolved with
+   * `actions.approveToolCall` / `actions.declineToolCall`.
+   */
+  approvals: PendingApproval[];
   /** Last error surfaced to the view, if it was not turned into a message. */
   error: string | null;
 }

@@ -36,6 +36,11 @@ export interface UraiChatLabels {
   scrollToLatest: string;
   stop: string;
   toolWorking: string;
+  /** The inline approval card for a client tool (`approve: "inline"`). */
+  approvalTitle(tool: string, host: string): string;
+  approvalAllow: string;
+  approvalDecline: string;
+  approvalDetails: string;
 
   placeholder: string;
   send: string;
@@ -120,6 +125,10 @@ export const DEFAULT_LABELS: UraiChatLabels = {
   scrollToLatest: "Scroll to latest",
   stop: "Stop",
   toolWorking: "Working",
+  approvalTitle: (tool, host) => `Allow ${host} to run “${tool}”?`,
+  approvalAllow: "Allow",
+  approvalDecline: "Decline",
+  approvalDetails: "Details",
 
   placeholder: "Type your message…",
   send: "Send",

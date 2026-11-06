@@ -4,6 +4,11 @@
 // stable identifier for its visitor. Server-side, this is treated as
 // opaque text; trust comes from the widget token + Origin allowlist.
 
+import type {
+  ClientHelloWire,
+  ClientToolResultWire,
+} from "./headless/client-tools";
+
 export interface TransportOptions {
   /** Origin (or origin + path prefix) of the chat-service deployment. */
   baseUrl: string;
@@ -356,14 +361,19 @@ export class Transport {
     content: string,
     attachments?: WidgetAttachment[],
     vars?: Record<string, unknown> | null,
+    client?: ClientHelloWire | null,
   ): Promise<SendMessageResult> {
     const body: {
       content: string;
       attachments?: WidgetAttachment[];
       vars?: Record<string, unknown>;
+      client?: ClientHelloWire;
     } = { content };
     if (attachments && attachments.length > 0) body.attachments = attachments;
     if (vars) body.vars = vars;
+    // Tools the host declared. A server whose widget doesn't accept declared
+    // tools (or that predates them) ignores the field.
+    if (client) body.client = client;
     const res = await fetch(this.url(`/threads/${threadId}/messages`), {
       method: "POST",
       headers: this.headers(),
@@ -371,6 +381,34 @@ export class Transport {
     });
     if (!res.ok) throw new Error(`send failed: ${res.status}`);
     return res.json();
+  }
+
+  /**
+   * Claim a client tool call for this client instance. `true` when this
+   * instance won; `false` when another claim already did (409) — the caller
+   * must then not run the call.
+   */
+  async claimToolCall(callId: string, instance: string): Promise<boolean> {
+    const res = await fetch(this.url(`/tool-calls/${callId}/claim`), {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ instance }),
+    });
+    if (res.status === 409) return false;
+    if (!res.ok) throw new Error(`claim failed: ${res.status}`);
+    return true;
+  }
+
+  /** Post a claimed call's result. `false` when the server refused it (409). */
+  async postToolCallResult(callId: string, body: ClientToolResultWire): Promise<boolean> {
+    const res = await fetch(this.url(`/tool-calls/${callId}/result`), {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(body),
+    });
+    if (res.status === 409) return false;
+    if (!res.ok) throw new Error(`tool result failed: ${res.status}`);
+    return true;
   }
 
   /**
@@ -541,6 +579,16 @@ export class Transport {
         // malformed command payload — ignore
       }
     });
+    // A client tool call: the agent asks the host app to run one of the tools
+    // it declared. Live and replayed events share the name — the handler
+    // claims before running, and only one claim ever wins, so a replay is safe.
+    es.addEventListener("client_tool_call", (e) => {
+      try {
+        handlers.onClientToolCall?.(JSON.parse((e as MessageEvent).data));
+      } catch {
+        // malformed payload — ignore
+      }
+    });
     // The "complete" event is the authoritative end-of-turn signal — it
     // carries the finalised assistant message. The server also fires a
     // separate "done" event right after, but per the HTML5 SSE spec an
@@ -613,6 +661,8 @@ export interface StreamHandlers {
   onCommand?: (command: unknown) => void;
   /** A command replayed while catching up — never forwarded to the host. */
   onCommandReplay?: (command: unknown) => void;
+  /** A client tool call (`client_tool_call`); raw payload, parsed by the runner. */
+  onClientToolCall?: (call: unknown) => void;
   onToolCallStarted?: (call: ToolCallStartedEvent) => void;
   onToolCallCompleted?: (call: ToolCallCompletedEvent) => void;
   onToolCallSummary?: (call: { id: string; summary: string }) => void;

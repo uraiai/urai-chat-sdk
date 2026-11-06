@@ -32,6 +32,7 @@ import type {
   ThreadItemSlotProps,
   ThreadSwitcherSlotProps,
   ToolActivitySlotProps,
+  ToolApprovalSlotProps,
   ToolCallCardSlotProps,
   UraiChatComponents,
 } from "./registry";
@@ -191,6 +192,48 @@ export function DefaultReasoning(props: ReasoningSlotProps) {
         {props.text}
       </div>
     </div>
+  );
+}
+
+export function DefaultToolApproval(props: ToolApprovalSlotProps) {
+  const cls = useCls();
+  const { approval } = props;
+  const args = JSON.stringify(approval.args ?? {}, null, 2);
+  const hasArgs = args !== "{}";
+  return (
+    <li
+      className={cls("toolApproval", "urai-tool-approval")}
+      data-urai-part="tool-approval"
+      data-tool={approval.tool}
+      role="group"
+      aria-label={props.title}
+    >
+      <div className="urai-tool-approval-title">{props.title}</div>
+      <div className="urai-tool-approval-description">{approval.description}</div>
+      {hasArgs && (
+        <details className="urai-tool-approval-details">
+          <summary>{props.detailsLabel}</summary>
+          <pre className="urai-tool-approval-args">{args}</pre>
+        </details>
+      )}
+      <div className="urai-tool-approval-actions">
+        <button
+          type="button"
+          className={cx("urai-tool-approval-decline", "urai-focusable")}
+          onClick={() => props.onDecline()}
+        >
+          {props.declineLabel}
+        </button>
+        <button
+          type="button"
+          className={cx("urai-tool-approval-allow", "urai-focusable")}
+          onClick={props.onAllow}
+          autoFocus
+        >
+          {props.allowLabel}
+        </button>
+      </div>
+    </li>
   );
 }
 
@@ -589,6 +632,7 @@ export const defaultComponents: UraiChatComponents = {
   Markdown: DefaultMarkdown,
   Reasoning: DefaultReasoning,
   ToolActivity: DefaultToolActivity,
+  ToolApproval: DefaultToolApproval,
   ToolCallCard: DefaultToolCallCard,
   ThinkingIndicator: DefaultThinkingIndicator,
   ScrollToBottomButton: DefaultScrollToBottomButton,

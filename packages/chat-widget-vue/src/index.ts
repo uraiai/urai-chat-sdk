@@ -1,5 +1,6 @@
 import {
   createUraiChatWidget,
+  type ClientToolsOptions,
   type ComponentRenderers,
   type ConfigOverrides,
   type ThreadChangeReason,
@@ -21,6 +22,12 @@ import {
 } from "vue";
 
 export type {
+  ClientToolApproval,
+  ClientToolCall,
+  ClientToolContext,
+  ClientToolDeclaration,
+  ClientToolEffect,
+  ClientToolsOptions,
   ComponentRenderContext,
   ComponentRenderer,
   ComponentRenderers,
@@ -68,6 +75,16 @@ export const UraiChatWidget = defineComponent({
      */
     threadId: {
       type: String as PropType<string | null>,
+      default: null,
+    },
+    /**
+     * Tools your app declares and runs itself, which the agent can call
+     * mid-turn and wait for. Read live, so new handlers apply on the next
+     * call without a remount. Needs "Allow tools declared by the embedding
+     * page" on the widget and an agent-mode assistant.
+     */
+    clientTools: {
+      type: Object as PropType<ClientToolsOptions | null>,
       default: null,
     },
     /**
@@ -170,6 +187,7 @@ export const UraiChatWidget = defineComponent({
         layout: props.layout,
         behavior: props.behavior,
         displayComponents: props.displayComponents,
+        clientTools: () => props.clientTools,
         container,
       });
       controller.value = c;

@@ -22,6 +22,17 @@ export type {
   WidgetVars,
 } from "./ui";
 
+export type {
+  ClientToolApproval,
+  ClientToolCall,
+  ClientToolContext,
+  ClientToolDeclaration,
+  ClientToolEffect,
+  ClientToolsOptions,
+  ClientToolsSource,
+  PendingApproval,
+} from "./headless/client-tools";
+
 export {
   DISPLAY_COMPONENT_COMMAND,
   parseDisplayComponent,

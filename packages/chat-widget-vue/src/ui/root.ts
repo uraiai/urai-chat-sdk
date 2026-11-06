@@ -29,6 +29,7 @@ import {
 } from "@uraiai/chat-widget-core/headless";
 import { ensureStyles, themeToStyle } from "@uraiai/chat-widget-core/theme";
 import type {
+  ClientToolsOptions,
   ConfigOverrides,
   ResolvedConfig,
   ThreadChangeReason,
@@ -130,6 +131,12 @@ export const chatRootProps = {
    * `thread-change`. Applies live. It must belong to `userId`.
    */
   threadId: { type: String as PropType<string | null>, default: null },
+  /**
+   * Tools your app declares and runs itself, which the agent can call
+   * mid-turn and wait for. Read live. Needs "Allow tools declared by the
+   * embedding page" on the widget and an agent-mode assistant.
+   */
+  clientTools: { type: Object as PropType<ClientToolsOptions | null>, default: null },
   /**
    * Transcript only: no composer, no switcher, no welcome, and nothing is
    * written. Changing it remounts the chat.
@@ -280,6 +287,7 @@ export const ChatRoot = defineComponent({
         behavior: props.behavior,
         fetchServerConfig: props.fetchServerConfig,
         transport: props.transport,
+        clientTools: () => props.clientTools,
       });
       lastUserId = props.userId;
       lastThreadId = props.threadId ?? null;

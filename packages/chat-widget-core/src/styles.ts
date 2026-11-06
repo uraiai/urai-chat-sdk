@@ -426,6 +426,55 @@ export const baseStyles = `
   gap: 8px;
   margin-top: 8px;
 }
+/* Inline approval for a client tool call (clientTools.approve: "inline"). */
+.ucw-tool-approval {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ucw-border);
+  border-radius: 8px;
+  background: var(--ucw-background);
+  color: var(--ucw-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.ucw-tool-approval-title { font-weight: 600; }
+.ucw-tool-approval-description { color: var(--ucw-muted); font-size: 12px; }
+.ucw-tool-approval-details { color: var(--ucw-muted); font-size: 12px; }
+.ucw-tool-approval-details summary { cursor: pointer; }
+.ucw-tool-approval-args {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  background: var(--ucw-surface);
+  border-radius: 6px;
+}
+.ucw-tool-approval-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ucw-tool-approval-allow,
+.ucw-tool-approval-decline {
+  padding: 5px 12px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ucw-tool-approval-allow {
+  border: 0;
+  background: var(--ucw-primary);
+  color: var(--ucw-primary-text);
+}
+.ucw-tool-approval-decline {
+  border: 1px solid var(--ucw-border);
+  background: none;
+  color: var(--ucw-text);
+}
 /* Sub-agent cards: one per delegate call, below the reply text. */
 .ucw-delegates {
   display: flex;

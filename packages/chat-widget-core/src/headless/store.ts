@@ -29,6 +29,12 @@ import { hydrateHistory, commitStream } from "./messages";
 import { freshFiles, shownFileVersions, withoutFiles } from "./files";
 import { parseDisplayComponent } from "./components";
 import { createDelegateList } from "./delegates";
+import {
+  createClientToolRunner,
+  parseClientToolCall,
+  type ClientToolApproval,
+  type ClientToolsSource,
+} from "./client-tools";
 import { createNullSessionStore, type SessionStore } from "./persistence";
 import type { ChatTransport } from "./transport-port";
 import type {
@@ -64,6 +70,11 @@ export interface ChatStoreDeps {
    * Defaults to 5000.
    */
   turnPollMs?: number;
+  /**
+   * Tools the host declares and runs itself (see `client-tools.ts`). Sent
+   * with every message; calls arrive on the turn's stream.
+   */
+  clientTools?: ClientToolsSource;
 }
 
 export interface ChatActions {
@@ -74,6 +85,11 @@ export interface ChatActions {
 
   setDraft(text: string): void;
   send(text?: string): Promise<void>;
+
+  /** Answer an inline approval card (`state.approvals`): run the call. */
+  approveToolCall(id: string): void;
+  /** Answer an inline approval card: refuse the call, optionally saying why. */
+  declineToolCall(id: string, note?: string): void;
 
   addFiles(files: File[] | FileList): void;
   removeAttachment(localId: number): void;
@@ -181,6 +197,7 @@ function initialState(deps: ChatStoreDeps): ChatState {
     status: "idle",
     threads: { items: null, query: "", loading: false },
     archive: "idle",
+    approvals: [],
     error: null,
   };
 }
@@ -226,6 +243,27 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
 
   let state = initialState(deps);
   const listeners = new Set<() => void>();
+  // One runner (and one instance id) for the store's whole life, so a call
+  // this instance claimed is still recognised after a stream reconnect.
+  // Inline approvals: the card in the reply resolves these.
+  const approvalResolvers = new Map<string, (a: ClientToolApproval) => void>();
+  const settleApproval = (id: string, answer: ClientToolApproval) => {
+    const resolve = approvalResolvers.get(id);
+    if (!resolve) return;
+    approvalResolvers.delete(id);
+    set({ approvals: state.approvals.filter((a) => a.id !== id) });
+    resolve(answer);
+  };
+  const clientTools = createClientToolRunner(
+    deps.clientTools,
+    deps.transport,
+    (error) => emit({ type: "error", error }),
+    (pending) =>
+      new Promise<ClientToolApproval>((resolve) => {
+        approvalResolvers.set(pending.id, resolve);
+        set({ approvals: [...state.approvals, pending] });
+      }),
+  );
 
   /**
    * Re-armable generation counter, not a one-way `destroyed` latch. A
@@ -636,6 +674,12 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         attach();
         patchStream({ components: [...state.stream.components, component] });
       },
+      onClientToolCall(raw) {
+        // Run even if a newer turn superseded this one in the UI: the agent
+        // is waiting on it either way, and the claim keeps it to one run.
+        const call = parseClientToolCall(raw);
+        if (call) void clientTools.handle(call, threadId);
+      },
       onToolCallStarted(call) {
         if (g !== gen) return;
         attach();
@@ -786,6 +830,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
         text,
         ready.map((p) => p.uploaded),
         state.vars,
+        clientTools.hello,
       );
       if (g !== gen) return;
       consumeStream(g, threadId, sent.assistant_message_id, sent.stream_url);
@@ -850,6 +895,11 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       // Bumping the generation is what makes every in-flight
       // continuation bail, and lets a later start() work again.
       gen += 1;
+      clientTools.abortAll();
+      // A card nobody can answer any more: decline it, so the agent stops waiting.
+      for (const id of [...approvalResolvers.keys()]) {
+        settleApproval(id, { ok: false, note: "The chat was closed before the user answered." });
+      }
       started = false;
       stopStream();
       scheduled = false;
@@ -865,6 +915,14 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       // And an open in flight — `pendingOpen` still holds it, so the next
       // `start()` issues it again.
       if (state.threadLoad === "loading") set({ threadLoad: "idle" });
+    },
+
+    approveToolCall(id) {
+      settleApproval(id, { ok: true });
+    },
+
+    declineToolCall(id, note) {
+      settleApproval(id, { ok: false, note: note?.trim() || undefined });
     },
 
     setDraft(text) {

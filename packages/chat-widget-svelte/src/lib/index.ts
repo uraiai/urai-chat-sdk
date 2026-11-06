@@ -1,6 +1,12 @@
 export { default as UraiChatWidget } from "./UraiChatWidget.svelte";
 
 export type {
+  ClientToolApproval,
+  ClientToolCall,
+  ClientToolContext,
+  ClientToolDeclaration,
+  ClientToolEffect,
+  ClientToolsOptions,
   ComponentRenderContext,
   ComponentRenderer,
   ComponentRenderers,

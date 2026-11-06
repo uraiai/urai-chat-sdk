@@ -10,6 +10,7 @@ import type {
   ChatMessage,
   MessageComponent,
   MessageDelegate,
+  PendingApproval,
   PendingAttachment,
   StreamSlice,
   ThreadSummary,
@@ -114,6 +115,17 @@ export interface ReasoningSlotProps {
 export interface ToolActivitySlotProps {
   label: string;
   completed: boolean;
+}
+
+/** The inline approval card for a client tool call; see the React twin. */
+export interface ToolApprovalSlotProps {
+  approval: PendingApproval;
+  title: string;
+  allowLabel: string;
+  declineLabel: string;
+  detailsLabel: string;
+  onAllow(): void;
+  onDecline(note?: string): void;
 }
 
 export interface ToolCallCardSlotProps {
@@ -291,6 +303,7 @@ export interface UraiChatComponents {
   Markdown: SlotComponent<MarkdownSlotProps>;
   Reasoning: SlotComponent<ReasoningSlotProps>;
   ToolActivity: SlotComponent<ToolActivitySlotProps>;
+  ToolApproval: SlotComponent<ToolApprovalSlotProps>;
   ToolCallCard: SlotComponent<ToolCallCardSlotProps>;
   ThinkingIndicator: SlotComponent<ThinkingIndicatorSlotProps>;
   ScrollToBottomButton: SlotComponent<ScrollToBottomButtonSlotProps>;

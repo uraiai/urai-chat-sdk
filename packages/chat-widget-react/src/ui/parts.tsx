@@ -254,6 +254,7 @@ export function MessageList() {
         <Message key={m.id} id={m.id} isLast={i === messages.length - 1} />
       ))}
       <StreamingMessage />
+      <ToolApprovals />
     </ol>
   );
 }
@@ -319,6 +320,35 @@ export function StreamingMessage() {
         ) : null
       }
     />
+  );
+}
+
+/**
+ * Inline approval cards for client tool calls, one per pending call. Its own
+ * row rather than part of the streaming slot: a host that replaces
+ * `StreamingMessage` must still see the card, or the agent waits forever.
+ */
+export function ToolApprovals() {
+  const { components, labels } = usePresentation();
+  const approvals = useChatSelector((s) => s.approvals);
+  const actions = useChatActions();
+  if (approvals.length === 0) return null;
+  const Slot = components.ToolApproval;
+  return (
+    <>
+      {approvals.map((a) => (
+        <Slot
+          key={a.id}
+          approval={a}
+          title={labels.approvalTitle(a.tool, a.host)}
+          allowLabel={labels.approvalAllow}
+          declineLabel={labels.approvalDecline}
+          detailsLabel={labels.approvalDetails}
+          onAllow={() => actions.approveToolCall(a.id)}
+          onDecline={(note) => actions.declineToolCall(a.id, note)}
+        />
+      ))}
+    </>
   );
 }
 

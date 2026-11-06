@@ -14,6 +14,7 @@ import {
   StreamingMessage,
   ThreadSwitcher,
   ThreadTrigger,
+  ToolApprovals,
   Viewport,
   ArchiveButton,
 } from "./parts";
@@ -63,6 +64,7 @@ export const Chat = {
   MessageList,
   Message,
   StreamingMessage,
+  ToolApprovals,
   Markdown,
   EmptyState,
   Composer,
@@ -135,6 +137,7 @@ export {
   DefaultThreadItem,
   DefaultThreadSwitcher,
   DefaultToolActivity,
+  DefaultToolApproval,
   DefaultToolCallCard,
   DefaultUserMessage,
 } from "./components/defaults";
@@ -157,6 +160,15 @@ export {
 } from "./class-names";
 export { ensureStyles, stylesheet } from "./styles";
 export { Markdown as MarkdownRenderer, splitStableTail } from "./markdown";
+
+export type {
+  ClientToolApproval,
+  ClientToolCall,
+  ClientToolContext,
+  ClientToolDeclaration,
+  ClientToolEffect,
+  ClientToolsOptions,
+} from "@uraiai/chat-widget-core";
 
 export type {
   ChatMessage as ChatMessageData,

@@ -42,6 +42,25 @@ export {
 export type { ChatTransport } from "./transport-port";
 
 export {
+  clientHello,
+  createClientToolRunner,
+  parseClientToolCall,
+  type ClientHelloWire,
+  type ClientToolApproval,
+  type ClientToolCall,
+  type ClientToolContext,
+  type ClientToolDeclaration,
+  type ClientToolEffect,
+  type ClientToolResultWire,
+  type ClientToolRunner,
+  type ClientToolsOptions,
+  type ClientToolsSource,
+  type InlineApprover,
+  type PendingApproval,
+} from "./client-tools";
+
+
+export {
   asNewConversationOptions,
   createChatStore,
   type ChatActions,

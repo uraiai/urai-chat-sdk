@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   MessageComponent,
   MessageDelegate,
+  PendingApproval,
   PendingAttachment,
   StreamSlice,
   ThreadSummary,
@@ -103,6 +104,22 @@ export interface ReasoningSlotProps {
 export interface ToolActivitySlotProps {
   label: string;
   completed: boolean;
+}
+
+/**
+ * The inline approval card for a client tool call (`clientTools.approve:
+ * "inline"`). Rendered as its own row after the streaming reply, so a
+ * replaced `StreamingMessage` slot can never hide it — an unanswered card
+ * would leave the agent waiting.
+ */
+export interface ToolApprovalSlotProps {
+  approval: PendingApproval;
+  title: string;
+  allowLabel: string;
+  declineLabel: string;
+  detailsLabel: string;
+  onAllow(): void;
+  onDecline(note?: string): void;
 }
 
 export interface ToolCallCardSlotProps {
@@ -272,6 +289,7 @@ export interface UraiChatComponents {
   Markdown: ComponentType<MarkdownSlotProps>;
   Reasoning: ComponentType<ReasoningSlotProps>;
   ToolActivity: ComponentType<ToolActivitySlotProps>;
+  ToolApproval: ComponentType<ToolApprovalSlotProps>;
   ToolCallCard: ComponentType<ToolCallCardSlotProps>;
   ThinkingIndicator: ComponentType<ThinkingIndicatorSlotProps>;
   ScrollToBottomButton: ComponentType<{

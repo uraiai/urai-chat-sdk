@@ -152,3 +152,17 @@ pre.log { max-height: 240px; overflow-y: auto; margin-top: 8px; }
   .page { grid-template-columns: 1fr; height: auto; }
   .frame { height: 70dvh; }
 }
+
+/* Client tools demo: the panel `open_ticket` fills in. */
+.ticket {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  background: #eef2ff;
+}
+.ticket button {
+  margin-left: auto;
+}

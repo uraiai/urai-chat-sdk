@@ -31,6 +31,13 @@ import {
 } from "./headless/files";
 import { parseDisplayComponent } from "./headless/components";
 import {
+  createClientToolRunner,
+  parseClientToolCall,
+  type ClientToolApproval,
+  type ClientToolsSource,
+  type PendingApproval,
+} from "./headless/client-tools";
+import {
   createDelegateList,
   delegateStatusLabel,
   delegateStepsLabel,
@@ -78,6 +85,8 @@ interface MountArgs {
   emit: (event: WidgetEvent) => void;
   /** Renderers for components tools ask to display, by name. */
   displayComponents?: ComponentRenderers;
+  /** Tools the host declares and runs itself — see `client-tools.ts`. */
+  clientTools?: ClientToolsSource;
 }
 
 export type WidgetVars = Record<string, unknown>;
@@ -218,6 +227,15 @@ interface UiState {
 export function mountWidget(args: MountArgs): MountedWidget {
   const { shadow, transport, hostElement, widgetToken } = args;
   const previewMode = !!args.previewMode;
+  // One runner per mount: its instance id is what the server's claim records.
+  // Inline approval cards still on screen, so destroy() can decline them.
+  const openApprovals = new Map<string, (a: ClientToolApproval) => void>();
+  const clientTools = createClientToolRunner(
+    previewMode ? null : args.clientTools,
+    transport,
+    (error: string) => args.emit({ type: "error", error }),
+    (pending) => showApprovalCard(pending),
+  );
   const readOnly = !!args.readOnly;
   let config = args.config;
   /**
@@ -1321,6 +1339,72 @@ export function mountWidget(args: MountArgs): MountedWidget {
    * chunk arrives — whichever comes first — so the visitor never sees an
    * empty bubble while the model is reasoning silently.
    */
+  /**
+   * The inline approval card (`clientTools.approve: "inline"`): its own row
+   * in the transcript, answered with Allow / Decline. Resolves once.
+   */
+  function showApprovalCard(pending: PendingApproval): Promise<ClientToolApproval> {
+    return new Promise((resolve) => {
+      const card = document.createElement("div");
+      card.className = "ucw-tool-approval";
+      card.setAttribute("role", "group");
+      card.dataset.tool = pending.tool;
+      const titleText = `Allow ${pending.host} to run “${pending.tool}”?`;
+      card.setAttribute("aria-label", titleText);
+
+      const title = document.createElement("div");
+      title.className = "ucw-tool-approval-title";
+      title.textContent = titleText;
+      card.appendChild(title);
+
+      const desc = document.createElement("div");
+      desc.className = "ucw-tool-approval-description";
+      desc.textContent = pending.description;
+      card.appendChild(desc);
+
+      const args = JSON.stringify(pending.args ?? {}, null, 2);
+      if (args !== "{}") {
+        const details = document.createElement("details");
+        details.className = "ucw-tool-approval-details";
+        const summary = document.createElement("summary");
+        summary.textContent = "Details";
+        const pre = document.createElement("pre");
+        pre.className = "ucw-tool-approval-args";
+        pre.textContent = args;
+        details.appendChild(summary);
+        details.appendChild(pre);
+        card.appendChild(details);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "ucw-tool-approval-actions";
+      const finish = (answer: ClientToolApproval) => {
+        if (!openApprovals.has(pending.id)) return;
+        openApprovals.delete(pending.id);
+        card.remove();
+        resolve(answer);
+      };
+      const decline = document.createElement("button");
+      decline.type = "button";
+      decline.className = "ucw-tool-approval-decline";
+      decline.textContent = "Decline";
+      decline.addEventListener("click", () => finish({ ok: false }));
+      const allow = document.createElement("button");
+      allow.type = "button";
+      allow.className = "ucw-tool-approval-allow";
+      allow.textContent = "Allow";
+      allow.addEventListener("click", () => finish({ ok: true }));
+      actions.appendChild(decline);
+      actions.appendChild(allow);
+      card.appendChild(actions);
+
+      openApprovals.set(pending.id, finish);
+      body.appendChild(card);
+      scrollToBottom();
+      allow.focus({ preventScroll: true });
+    });
+  }
+
   function appendThinking(): { remove(): void } {
     const el = document.createElement("div");
     el.className = "ucw-thinking";
@@ -1549,6 +1633,11 @@ export function mountWidget(args: MountArgs): MountedWidget {
         onFirstSignal();
         components.add(component);
       },
+      onClientToolCall(raw) {
+        if (destroyed) return;
+        const call = parseClientToolCall(raw);
+        if (call) void clientTools.handle(call, threadId);
+      },
       onToolCallStarted(call) {
         if (destroyed) return;
         onFirstSignal();
@@ -1756,6 +1845,7 @@ export function mountWidget(args: MountArgs): MountedWidget {
         text,
         uploadedDescriptors,
         state.currentVars,
+        clientTools.hello,
       );
       if (destroyed) return;
       consumeStream(threadId, send.assistant_message_id, send.stream_url, thinking);
@@ -2129,6 +2219,10 @@ export function mountWidget(args: MountArgs): MountedWidget {
   function destroy() {
     if (destroyed) return;
     destroyed = true;
+    for (const finish of [...openApprovals.values()]) {
+      finish({ ok: false, note: "The chat was closed before the user answered." });
+    }
+    clientTools.abortAll();
     closeActiveStream();
     if (previewTimer !== null) {
       clearTimeout(previewTimer);

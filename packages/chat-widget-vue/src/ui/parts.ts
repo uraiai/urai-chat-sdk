@@ -296,6 +296,38 @@ export const StreamingMessage = defineComponent({
 });
 
 /**
+ * Inline approval cards for client tool calls. Its own row, outside the
+ * streaming slot, so a replaced `StreamingMessage` can never hide one.
+ */
+export const ToolApprovals = defineComponent({
+  name: "ChatToolApprovals",
+  setup() {
+    const p = usePresentation();
+    const approvals = useChatSelector((s) => s.approvals);
+    const actions = useChatActions();
+    return () => {
+      const list = approvals.value;
+      if (list.length === 0) return null;
+      return h(
+        Fragment,
+        list.map((a) =>
+          h(p.components.ToolApproval, {
+            key: a.id,
+            approval: a,
+            title: p.labels.approvalTitle(a.tool, a.host),
+            allowLabel: p.labels.approvalAllow,
+            declineLabel: p.labels.approvalDecline,
+            detailsLabel: p.labels.approvalDetails,
+            onAllow: () => actions.approveToolCall(a.id),
+            onDecline: (note?: string) => actions.declineToolCall(a.id, note),
+          }),
+        ),
+      );
+    };
+  },
+});
+
+/**
  * Subscribes to `messages` only. Because the store keeps that array's
  * identity across every streamed token, this does not re-render mid-turn.
  */
@@ -322,6 +354,7 @@ export const MessageList = defineComponent({
             h(Message, { key: m.id, id: m.id, isLast: i === list.length - 1 }),
           ),
           h(StreamingMessage),
+          h(ToolApprovals),
         ],
       );
     };

@@ -1,5 +1,6 @@
 import {
   createUraiChatWidget,
+  type ClientToolsOptions,
   type ComponentRenderers,
   type ConfigOverrides,
   type ThreadChangeReason,
@@ -20,6 +21,12 @@ import {
 } from "react";
 
 export type {
+  ClientToolApproval,
+  ClientToolCall,
+  ClientToolContext,
+  ClientToolDeclaration,
+  ClientToolEffect,
+  ClientToolsOptions,
   ComponentRenderContext,
   ComponentRenderer,
   ComponentRenderers,
@@ -85,6 +92,14 @@ export interface UraiChatWidgetProps {
    * A uraiJS tool sent a command via `meta.urai.sendCommand`. The payload
    * is the developer's JSON, verbatim — treat as untrusted input.
    */
+  /**
+   * Tools your app declares and runs itself, which the agent can call
+   * mid-turn — open a record, read the cart, apply a filter — and wait for
+   * the result. Read live: new handlers apply on the next call without a
+   * remount. Needs "Allow tools declared by the embedding page" on the
+   * widget and an agent-mode assistant. See `ClientToolsOptions`.
+   */
+  clientTools?: ClientToolsOptions | null;
   onCommand?: (command: unknown) => void;
   onError?: (error: string) => void;
   /**
@@ -146,6 +161,8 @@ export const UraiChatWidget = forwardRef<WidgetController, UraiChatWidgetProps>(
         layout: p.layout,
         behavior: p.behavior,
         displayComponents: p.displayComponents,
+        // A getter, so the latest props' tools are used on every send/call.
+        clientTools: () => propsRef.current.clientTools,
         container,
       });
       controllerRef.current = controller;

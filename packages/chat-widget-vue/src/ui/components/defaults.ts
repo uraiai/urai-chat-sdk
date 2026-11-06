@@ -35,6 +35,7 @@ import type {
   ThreadItemSlotProps,
   ThreadSwitcherSlotProps,
   ToolActivitySlotProps,
+  ToolApprovalSlotProps,
   ToolCallCardSlotProps,
   UraiChatComponents,
 } from "./registry";
@@ -219,6 +220,54 @@ export const DefaultToolActivity = slot<ToolActivitySlotProps>(
       [
         h("span", { class: "urai-tool-activity-dot", "aria-hidden": "true" }),
         h("span", props.completed ? props.label : `${props.label}…`),
+      ],
+    );
+  },
+);
+
+export const DefaultToolApproval = slot<ToolApprovalSlotProps>(
+  "DefaultToolApproval",
+  (props) => {
+    const p = usePresentation();
+    const args = JSON.stringify(props.approval.args ?? {}, null, 2);
+    return h(
+      "li",
+      {
+        class: cls(p, "toolApproval", "urai-tool-approval"),
+        "data-urai-part": "tool-approval",
+        "data-tool": props.approval.tool,
+        role: "group",
+        "aria-label": props.title,
+      },
+      [
+        h("div", { class: "urai-tool-approval-title" }, props.title),
+        h("div", { class: "urai-tool-approval-description" }, props.approval.description),
+        args !== "{}"
+          ? h("details", { class: "urai-tool-approval-details" }, [
+              h("summary", props.detailsLabel),
+              h("pre", { class: "urai-tool-approval-args" }, args),
+            ])
+          : null,
+        h("div", { class: "urai-tool-approval-actions" }, [
+          h(
+            "button",
+            {
+              type: "button",
+              class: cx("urai-tool-approval-decline", "urai-focusable"),
+              onClick: () => props.onDecline(),
+            },
+            props.declineLabel,
+          ),
+          h(
+            "button",
+            {
+              type: "button",
+              class: cx("urai-tool-approval-allow", "urai-focusable"),
+              onClick: () => props.onAllow(),
+            },
+            props.allowLabel,
+          ),
+        ]),
       ],
     );
   },
@@ -604,6 +653,7 @@ export const defaultComponents: UraiChatComponents = {
   Markdown: DefaultMarkdown,
   Reasoning: DefaultReasoning,
   ToolActivity: DefaultToolActivity,
+  ToolApproval: DefaultToolApproval,
   ToolCallCard: DefaultToolCallCard,
   ThinkingIndicator: DefaultThinkingIndicator,
   ScrollToBottomButton: DefaultScrollToBottomButton,

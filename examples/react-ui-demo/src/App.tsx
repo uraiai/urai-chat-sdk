@@ -3,6 +3,7 @@ import {
   UraiChat,
   DefaultHeader,
   DefaultSendButton,
+  type ClientToolsOptions,
   type DisplayComponentProps,
   type UraiChatDisplayComponents,
   type UraiChatHandle,
@@ -116,6 +117,48 @@ export function App() {
   const [saved, setSaved] = useState<SavedThread[]>(loadSaved);
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [viewing, setViewing] = useState<SavedThread | null>(null);
+  // Client tools: the agent asks this page to act, and waits for the result.
+  const [ticket, setTicket] = useState<{ id: string; reason: string } | null>(null);
+  const [askFirst, setAskFirst] = useState(false);
+
+  // Rebuilt every render on purpose: the SDK reads the latest tools on each
+  // call, so `route` and `askFirst` here are always current, with no remount.
+  const clientTools: ClientToolsOptions = {
+    host: "react-ui-demo",
+    tools: [
+      {
+        name: "open_ticket",
+        description:
+          "Open a support ticket in the demo app's ticket panel so the user can see it. " +
+          "Use when the user asks to see, open or show a ticket by id.",
+        parameters: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "Ticket id, e.g. T-1042." },
+            reason: { type: "string", description: "One line on why it is being opened." },
+          },
+          required: ["id"],
+        },
+        handler: async (args) => {
+          const { id, reason = "" } = args as { id: string; reason?: string };
+          setTicket({ id, reason });
+          note(`client tool: open_ticket(${id})`);
+          return { opened: id, shown_to_user: true };
+        },
+      },
+      {
+        name: "current_page",
+        description: "Read which page of the demo app the user is on, and their plan.",
+        effect: "read",
+        handler: async () => {
+          note(`client tool: current_page → ${route.path}`);
+          return { ...route.vars };
+        },
+      },
+    ],
+    // The chat's own Allow / Decline card, inline in the reply.
+    approve: askFirst ? "inline" : undefined,
+  };
 
   useEffect(() => {
     try {
@@ -327,6 +370,27 @@ export function App() {
         </section>
 
         <section>
+          <h2>Client tools</h2>
+          <p className="hint">
+            Needs "Allow tools declared by the embedding page" on the widget and an
+            agent-mode assistant. Try: "open ticket T-1042" or "which page am I on?"
+          </p>
+          <label className="row">
+            <input type="checkbox" checked={askFirst} onChange={(e) => setAskFirst(e.target.checked)} />
+            ask before running write tools
+          </label>
+          {ticket ? (
+            <div className="ticket">
+              <strong>Ticket {ticket.id}</strong>
+              {ticket.reason && <span className="hint"> — {ticket.reason}</span>}
+              <button onClick={() => setTicket(null)}>close</button>
+            </div>
+          ) : (
+            <p className="hint">No ticket open.</p>
+          )}
+        </section>
+
+        <section>
           <h2>Other actions</h2>
           <div className="row">
             <button onClick={() => chat.current?.sendMessage("What can you do?")}>
@@ -378,6 +442,7 @@ export function App() {
             onUserMessage={(c) => note(`user-message: ${c.slice(0, 60)}`)}
             onAssistantReply={(c) => note(`assistant-reply: ${c.length} chars`)}
             displayComponents={DISPLAY_COMPONENTS}
+            clientTools={clientTools}
             onThreadChange={(threadId, { reason }) => {
               note(`thread-change: ${threadId ?? "null"} (${reason})`);
               if (reason === "created" && threadId) {

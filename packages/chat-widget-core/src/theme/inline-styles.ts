@@ -197,6 +197,37 @@ ${w(".urai-tool-summary::before")} {
 }
 ${w(".urai-tool-summary-pending")} { opacity: 0.7; }
 
+${w(".urai-tool-approval")} {
+  display: flex; flex-direction: column; gap: var(--urai-space-4);
+  margin: var(--urai-space-4) 0; padding: var(--urai-space-5) var(--urai-space-6);
+  border: 1px solid var(--urai-color-border); border-radius: var(--urai-radius-sm);
+  background: var(--urai-color-surface-raised);
+  font-size: var(--urai-font-size-sm); line-height: var(--urai-line-height-snug);
+}
+${w(".urai-tool-approval-title")} { font-weight: 600; color: var(--urai-color-text); }
+${w(".urai-tool-approval-description")} { color: var(--urai-color-text-muted); font-size: var(--urai-font-size-xs); }
+${w(".urai-tool-approval-details")} { font-size: var(--urai-font-size-xs); color: var(--urai-color-text-muted); }
+${w(".urai-tool-approval-details summary")} { cursor: pointer; }
+${w(".urai-tool-approval-args")} {
+  margin: var(--urai-space-3) 0 0; padding: var(--urai-space-3) var(--urai-space-4);
+  max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--urai-font-family-mono); font-size: var(--urai-font-size-2xs);
+  background: var(--urai-color-surface-sunken); border-radius: var(--urai-radius-xs);
+}
+${w(".urai-tool-approval-actions")} { display: flex; justify-content: flex-end; gap: var(--urai-space-4); }
+${w(".urai-tool-approval-allow, .urai-tool-approval-decline")} {
+  padding: var(--urai-space-3) var(--urai-space-6); border-radius: var(--urai-radius-sm);
+  font: inherit; font-size: var(--urai-font-size-xs); cursor: pointer;
+}
+${w(".urai-tool-approval-allow")} {
+  border: 0; background: var(--urai-color-primary); color: var(--urai-color-on-primary);
+}
+${w(".urai-tool-approval-allow:hover")} { background: var(--urai-color-primary-hover); }
+${w(".urai-tool-approval-decline")} {
+  border: 1px solid var(--urai-color-border); background: none; color: var(--urai-color-text);
+}
+${w(".urai-tool-approval-decline:hover")} { background: var(--urai-color-hover-on-surface); }
+
 ${w(".urai-thinking")} {
   display: flex; align-items: center; gap: var(--urai-space-5);
   font-size: var(--urai-font-size-xs); color: var(--urai-color-text-muted);

@@ -38,6 +38,8 @@ export interface UraiChatClassNames {
   reasoningTrigger?: ClassValue;
   reasoningBody?: ClassValue;
   toolActivity?: ClassValue;
+  /** The inline approval card for a client tool call. */
+  toolApproval?: ClassValue;
   thinkingIndicator?: ClassValue;
   scrollToBottomButton?: ClassValue;
   emptyState?: ClassValue;

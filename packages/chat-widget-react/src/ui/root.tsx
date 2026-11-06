@@ -20,6 +20,7 @@ import {
 } from "@uraiai/chat-widget-core/headless";
 import { themeToStyle } from "@uraiai/chat-widget-core/theme";
 import type {
+  ClientToolsOptions,
   ConfigOverrides,
   ThreadChangeReason,
   WidgetEvent,
@@ -122,6 +123,14 @@ export interface ChatRootProps {
    * name with no entry is not shown.
    */
   displayComponents?: UraiChatDisplayComponents;
+  /**
+   * Tools your app declares and runs itself, which the agent can call
+   * mid-turn — open a record, read the cart, apply a filter — and wait for
+   * the result. Read live: new handlers apply on the next call without a
+   * remount. Needs "Allow tools declared by the embedding page" on the
+   * widget and an agent-mode assistant. See `ClientToolsOptions`.
+   */
+  clientTools?: ClientToolsOptions | null;
   classNames?: UraiChatClassNames;
   labels?: UraiChatLabelsInput;
   icons?: Partial<UraiChatIcons>;
@@ -208,6 +217,8 @@ function ChatRoot(props, ref) {
       behavior: props.behavior,
       fetchServerConfig: props.fetchServerConfig,
       transport: props.transport,
+      // A getter, so the latest props' tools are used on every send/call.
+      clientTools: () => handlers.current.clientTools,
     });
     const off = c.on("ready", () => handlers.current.onReady?.());
     const offAll = (

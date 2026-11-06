@@ -16,6 +16,7 @@ import { createSessionStore } from "./persistence";
 import { createChatStore, type ChatStore } from "./store";
 import type { ChatTransport } from "./transport-port";
 import type { WidgetVars } from "./types";
+import type { ClientToolsSource } from "./client-tools";
 
 export const DEFAULT_BASE_URL = "https://chat.app.urai.dev";
 
@@ -55,6 +56,12 @@ export interface ChatClientOptions {
    * a host that already holds the config avoid a second round-trip.
    */
   serverConfig?: ServerConfig;
+  /**
+   * Tools your app declares and runs itself, called by the agent mid-turn.
+   * Needs "Allow tools declared by the embedding page" on the widget and an
+   * agent-mode assistant. See `ClientToolsOptions`.
+   */
+  clientTools?: ClientToolsSource;
   /** Injected in tests and by the designer preview. */
   transport?: ChatTransport;
   batch?: "raf" | "sync";
@@ -116,6 +123,7 @@ export function createChatClient(options: ChatClientOptions): ChatClient {
     readOnly: options.readOnly,
     emit,
     batch: options.batch,
+    clientTools: options.clientTools ?? null,
     session: createSessionStore({
       widgetToken: options.widgetToken,
       getUserId: () => store.getState().userId,

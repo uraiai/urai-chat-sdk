@@ -3,6 +3,7 @@
 // shadow-DOM UI, and returns a controller. Multiple instances per page
 // are supported — each gets its own emitter, transport, and shadow root.
 
+import type { ClientToolsSource } from "./headless/client-tools";
 import {
   resolveConfig,
   type ConfigOverrides,
@@ -84,6 +85,13 @@ export interface UraiChatWidgetOptions {
    * no renderer here is not shown. See `ComponentRenderer`.
    */
   displayComponents?: ComponentRenderers;
+  /**
+   * Tools your app declares and runs itself, called by the agent mid-turn —
+   * e.g. open a record in your UI and report back. Needs "Allow tools
+   * declared by the embedding page" on the widget and an agent-mode
+   * assistant. See `ClientToolsOptions`.
+   */
+  clientTools?: ClientToolsSource;
 }
 
 export interface WidgetController {
@@ -225,6 +233,7 @@ export function createUraiChatWidget(
       readOnly: options.readOnly,
       hostElement: host,
       displayComponents: options.displayComponents,
+      clientTools: options.clientTools ?? null,
       emit: (event: WidgetEvent) => emitter.emit(event),
     });
 

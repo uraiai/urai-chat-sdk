@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import {
     createUraiChatWidget,
+    type ClientToolsOptions,
     type ComponentRenderers,
     type ConfigOverrides,
     type ThreadChangeReason,
@@ -47,6 +48,13 @@
      */
     displayComponents?: ComponentRenderers;
     /**
+     * Tools your app declares and runs itself, which the agent can call
+     * mid-turn and wait for. Read live, so new handlers apply on the next
+     * call. Needs "Allow tools declared by the embedding page" on the widget
+     * and an agent-mode assistant. See `ClientToolsOptions`.
+     */
+    clientTools?: ClientToolsOptions | null;
+    /**
      * "floating" (default) appends a launcher to document.body;
      * "inline" renders the chat panel inside this component's div.
      * Changing mode remounts the widget.
@@ -85,6 +93,7 @@
     layout = undefined,
     behavior = undefined,
     displayComponents = undefined,
+    clientTools = null,
     mode = "floating",
     onready,
     onopened,
@@ -133,6 +142,8 @@
         layout,
         behavior,
         displayComponents,
+        // A getter: reads the current prop on every send/call.
+        clientTools: () => clientTools,
         container,
       }),
     );
