@@ -146,10 +146,12 @@ export type { ThreadChangeReason } from "../events";
 export { WidgetHttpError } from "../transport";
 
 export type {
+  BearerAuth,
   DelegateStatus,
   MessageComponent,
   MessageDelegate,
   ServerMessage,
+  ThreadRef,
   ToolCallCompletedEvent,
   ToolCallStartedEvent,
   ThreadSummary,

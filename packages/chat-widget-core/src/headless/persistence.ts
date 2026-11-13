@@ -14,6 +14,10 @@ export interface SessionStore {
 }
 
 export interface SessionStoreOptions {
+  /**
+   * The namespace threads are saved under: the widget token, or a host's own
+   * `storageKey` (an add-on keys by device and agent, having no token).
+   */
   widgetToken: string;
   getUserId(): string;
   /** Re-read per call, since `configure()` can flip it at runtime. */

@@ -86,6 +86,14 @@ export interface ChatActions {
   setDraft(text: string): void;
   send(text?: string): Promise<void>;
 
+  /**
+   * Stop the running reply on the server. Open approval cards are declined
+   * and running client tools aborted first, so the turn ends promptly. A
+   * no-op when nothing is running or `state.canStop` is false. The stream
+   * then ends the usual way, with whatever the reply had so far.
+   */
+  stopTurn(): Promise<void>;
+
   /** Answer an inline approval card (`state.approvals`): run the call. */
   approveToolCall(id: string): void;
   /** Answer an inline approval card: refuse the call, optionally saying why. */
@@ -198,6 +206,7 @@ function initialState(deps: ChatStoreDeps): ChatState {
     threads: { items: null, query: "", loading: false },
     archive: "idle",
     approvals: [],
+    canStop: !!deps.transport?.stopTurn,
     error: null,
   };
 }
@@ -399,6 +408,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       try {
         const msgs = await transport.listMessages(threadId);
         if (g !== gen || state.stream?.messageId !== messageId) return;
+        runPendingCalls(msgs, messageId, threadId);
         if (!isTurnFinished(msgs, messageId)) return;
         const content = msgs.find((m) => m.id === messageId)?.content ?? "";
         stopStream();
@@ -587,7 +597,24 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
     const running = msgs.find(
       (m) => m.role === "assistant" && m.streaming && m.stream_url,
     );
-    if (running?.stream_url) consumeStream(g, threadId, running.id, running.stream_url);
+    if (running?.stream_url) {
+      consumeStream(g, threadId, running.id, running.stream_url);
+      runPendingCalls(msgs, running.id, threadId);
+    }
+  }
+
+  /**
+   * Client tool calls the server lists on the running row. The same calls
+   * also arrive on the stream; whichever comes first runs, since the runner
+   * skips a call it has seen and the server lets only one claim win. This is
+   * what keeps client tools working behind a proxy that buffers the stream.
+   */
+  function runPendingCalls(msgs: ServerMessage[], messageId: string, threadId: string) {
+    const row = msgs.find((m) => m.id === messageId);
+    for (const raw of row?.client_calls ?? []) {
+      const call = parseClientToolCall(raw);
+      if (call) void clientTools.handle(call, threadId);
+    }
   }
 
   function consumeStream(
@@ -915,6 +942,21 @@ export function createChatStore(deps: ChatStoreDeps): ChatStore {
       // And an open in flight — `pendingOpen` still holds it, so the next
       // `start()` issues it again.
       if (state.threadLoad === "loading") set({ threadLoad: "idle" });
+    },
+
+    async stopTurn() {
+      const transport = deps.transport;
+      const threadId = state.threadId;
+      if (!transport?.stopTurn || !threadId || state.status === "idle") return;
+      clientTools.abortAll();
+      for (const id of [...approvalResolvers.keys()]) {
+        settleApproval(id, { ok: false, note: "The user stopped the reply." });
+      }
+      try {
+        await transport.stopTurn(threadId);
+      } catch (e) {
+        emit({ type: "error", error: `stop failed: ${e instanceof Error ? e.message : String(e)}` });
+      }
     },
 
     approveToolCall(id) {

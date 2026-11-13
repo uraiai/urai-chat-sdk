@@ -8,7 +8,7 @@
  * any other. `ready` is kept for parity and for tests that want to wait.
  */
 import { Transport } from "../transport";
-import type { ServerConfig } from "../transport";
+import type { BearerAuth, ServerConfig } from "../transport";
 import { Emitter, type WidgetEvent, type WidgetEventListener, type WidgetEventName } from "../events";
 import type { ConfigOverrides } from "../config";
 import { resolveLayers } from "./config-layers";
@@ -21,8 +21,22 @@ import type { ClientToolsSource } from "./client-tools";
 export const DEFAULT_BASE_URL = "https://chat.app.urai.dev";
 
 export interface ChatClientOptions {
-  widgetToken: string;
-  userId: string;
+  /** Required unless `bearer` is given. */
+  widgetToken?: string;
+  /** Required unless `bearer` is given. */
+  userId?: string;
+  /**
+   * Sign in as a member instead of a widget visitor: Urai's own add-ons
+   * (Google Docs first) talk to `/api/client/v1` with a bearer session from
+   * the connect flow. Replaces `widgetToken` and `userId`.
+   */
+  bearer?: BearerAuth;
+  /**
+   * Where the current thread id is remembered in `localStorage`. Defaults to
+   * the widget token (per `userId`); with `bearer`, to the agent and thread
+   * ref. Give one to keep two chats on the same page apart.
+   */
+  storageKey?: string;
   baseUrl?: string;
   vars?: WidgetVars | null;
   /**
@@ -84,11 +98,28 @@ function overridesOf(o: ChatClientOptions): ConfigOverrides {
   return { theme: o.theme, layout: o.layout, behavior: o.behavior };
 }
 
+/** The member id a bearer chat runs under: the server knows who it is. */
+const MEMBER_USER_ID = "member";
+
+/** The default `storageKey` for a bearer chat: per agent, per thread ref. */
+function bearerStorageKey(b: BearerAuth): string {
+  const r = typeof b.threadRef === "function" ? b.threadRef() : b.threadRef;
+  return `client:${b.agentId}:${r?.ref ?? ""}`;
+}
+
 export function createChatClient(options: ChatClientOptions): ChatClient {
-  if (!options.widgetToken) throw new Error("[UraiChat] widgetToken is required");
-  if (!options.userId || !options.userId.trim()) {
-    throw new Error("[UraiChat] userId is required");
+  const bearer = options.bearer;
+  if (!bearer) {
+    if (!options.widgetToken) throw new Error("[UraiChat] widgetToken is required");
+    if (!options.userId || !options.userId.trim()) {
+      throw new Error("[UraiChat] userId is required");
+    }
+  } else if (!bearer.agentId) {
+    throw new Error("[UraiChat] bearer.agentId is required");
   }
+  const userId = bearer ? (options.userId?.trim() || MEMBER_USER_ID) : options.userId!;
+  const storageKey =
+    options.storageKey ?? (bearer ? bearerStorageKey(bearer) : options.widgetToken!);
 
   const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
   const emitter = new Emitter();
@@ -96,11 +127,11 @@ export function createChatClient(options: ChatClientOptions): ChatClient {
 
   const transport: ChatTransport =
     options.transport ??
-    new Transport({
-      baseUrl,
-      widgetToken: options.widgetToken,
-      widgetUserId: options.userId,
-    });
+    new Transport(
+      bearer
+        ? { baseUrl, bearer }
+        : { baseUrl, widgetToken: options.widgetToken, widgetUserId: userId },
+    );
 
   const optionOverrides = overridesOf(options);
   let serverOverrides: ConfigOverrides = {};
@@ -116,7 +147,7 @@ export function createChatClient(options: ChatClientOptions): ChatClient {
   const store = createChatStore({
     transport,
     config: resolve(),
-    userId: options.userId,
+    userId,
     vars: options.vars ?? null,
     collections: options.collections ?? null,
     threadId: options.threadId ?? null,
@@ -125,7 +156,7 @@ export function createChatClient(options: ChatClientOptions): ChatClient {
     batch: options.batch,
     clientTools: options.clientTools ?? null,
     session: createSessionStore({
-      widgetToken: options.widgetToken,
+      widgetToken: storageKey,
       getUserId: () => store.getState().userId,
       isEnabled: () => store.getState().config.behavior.persistAcrossSessions,
     }),

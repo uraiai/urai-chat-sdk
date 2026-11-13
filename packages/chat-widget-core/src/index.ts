@@ -54,6 +54,8 @@ export type {
   DelegateStatus,
   MessageComponent,
   MessageDelegate,
+  BearerAuth,
+  ThreadRef,
   ServerMessage,
   ThreadSummary,
   SendMessageResult,

@@ -48,6 +48,23 @@ function resultsOf(t: FakeTransport) {
 }
 
 describe("client tools: hello", () => {
+  it("sends families, and never declares a family's tools", () => {
+    const hello = clientHello({
+      host: "gdocs",
+      families: ["document@1"],
+      tools: [
+        { name: "doc_edit", description: "Edit the document.", handler: async () => null },
+        { name: "open_ticket", description: "Open a ticket.", handler: async () => null },
+      ],
+    })!;
+    expect(hello.families).toEqual(["document@1"]);
+    expect(hello.tools.map((t) => t.name)).toEqual(["open_ticket"]);
+  });
+
+  it("omits families when there are none", () => {
+    expect(clientHello(openTicketTools())).not.toHaveProperty("families");
+  });
+
   it("sends declarations, never handlers, with defaults filled in", () => {
     const hello = clientHello(openTicketTools())!;
     expect(hello.host).toBe("acme");

@@ -169,6 +169,12 @@ export interface SendButtonSlotProps {
   label: string;
   disabled: boolean;
   isStreaming: boolean;
+  /**
+   * The button stops the running reply instead of sending (member hosts with
+   * a stop route). `buttonProps` already carry the right behaviour; this is
+   * for the icon.
+   */
+  canStop?: boolean;
   buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 

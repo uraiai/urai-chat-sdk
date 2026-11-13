@@ -137,3 +137,40 @@ describe("store: a stream that never ends", () => {
     expect(store.getState().status).toBe("idle");
   });
 });
+
+describe("store: client calls listed with history", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("runs a call the stream never delivered (a buffering proxy), once", async () => {
+    const messages: Record<string, ServerMessage[]> = {};
+    const transport = makeFakeTransport({ messages });
+    const handler = vi.fn(async () => ({ title: "Doc" }));
+    const store = createChatStore({
+      transport,
+      config: resolveConfig({}),
+      userId: "member",
+      batch: "sync",
+      turnPollMs: 5000,
+      clientTools: {
+        host: "gdocs",
+        families: ["document@1"],
+        tools: [{ name: "doc_read", description: "Read.", effect: "read", handler }],
+      },
+    });
+    await store.actions.send("read it");
+    const call = { id: "c1", tool: "doc_read", args: {}, effect: "read" };
+    messages.t1 = [user, { ...placeholder, streaming: true, stream_url: "/s", client_calls: [call] }];
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(handler).toHaveBeenCalledOnce();
+    expect(transport.callNames()).toContain("claimToolCall");
+
+    // The stream catches up with the same call later, and a second poll still
+    // lists it until the claim lands: neither runs it again.
+    transport.lastStreamHandlers()?.onClientToolCall?.(call);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(handler).toHaveBeenCalledOnce();
+  });
+});
+

@@ -27,7 +27,7 @@ import type {
   WidgetEventListener,
   WidgetEventName,
 } from "@uraiai/chat-widget-core";
-import type { ChatState, ThreadSummary } from "@uraiai/chat-widget-core/headless";
+import type { BearerAuth, ChatState, ThreadSummary } from "@uraiai/chat-widget-core/headless";
 import {
   ChatStoreProvider,
   PresentationProvider,
@@ -83,8 +83,19 @@ export interface UraiChatHandle {
 }
 
 export interface ChatRootProps {
-  widgetToken: string;
-  userId: string;
+  /** Required unless `bearer` is given. */
+  widgetToken?: string;
+  /** Required unless `bearer` is given. */
+  userId?: string;
+  /**
+   * Sign in as a member instead of a widget visitor — Urai's own add-ons on
+   * `/api/client/v1`. Replaces `widgetToken` and `userId`. Read live, so a
+   * new `getToken` or `threadRef` applies without a remount; a different
+   * `agentId` remounts the chat.
+   */
+  bearer?: BearerAuth | null;
+  /** Where the current thread id is remembered. See `ChatClientOptions.storageKey`. */
+  storageKey?: string;
   baseUrl?: string;
   vars?: WidgetVars | null;
   /**
@@ -204,9 +215,27 @@ function ChatRoot(props, ref) {
 
   useEffect(() => {
     if (!mounted) return;
+    const b = props.bearer;
     const c = createChatClient({
       widgetToken: props.widgetToken,
       userId: props.userId,
+      // Read through the ref, so a re-render with a fresh object (a new
+      // token getter, another document) needs no new client.
+      bearer: b
+        ? {
+            agentId: b.agentId,
+            getToken: () => (handlers.current.bearer ?? b).getToken(),
+            refreshToken: () => {
+              const cur = handlers.current.bearer ?? b;
+              return cur.refreshToken ? cur.refreshToken() : null;
+            },
+            threadRef: () => {
+              const r = (handlers.current.bearer ?? b).threadRef;
+              return (typeof r === "function" ? r() : r) ?? null;
+            },
+          }
+        : undefined,
+      storageKey: props.storageKey,
       baseUrl: props.baseUrl,
       vars: props.vars,
       collections: props.collections,
@@ -252,7 +281,15 @@ function ChatRoot(props, ref) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // `readOnly` is here because it decides which session store the client
     // gets; flipping it on a live conversation is not worth the edge cases.
-  }, [mounted, props.widgetToken, props.baseUrl, props.transport, props.readOnly]);
+  }, [
+    mounted,
+    props.widgetToken,
+    props.baseUrl,
+    props.transport,
+    props.readOnly,
+    props.bearer?.agentId,
+    props.storageKey,
+  ]);
 
   // `userId` and `vars` apply live. Both are diffed against the value the
   // client was built with, so the first render never fires a redundant
@@ -260,7 +297,8 @@ function ChatRoot(props, ref) {
   // every parent render must not thrash the server.
   const lastUserId = useRef(props.userId);
   useEffect(() => {
-    if (!client || props.userId === lastUserId.current) return;
+    // A bearer chat has no visitor to switch: the session is the identity.
+    if (!client || !props.userId || props.userId === lastUserId.current) return;
     lastUserId.current = props.userId;
     client.store.actions.setUser(props.userId);
   }, [client, props.userId]);

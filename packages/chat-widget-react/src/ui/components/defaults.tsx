@@ -493,7 +493,8 @@ export function DefaultComposerInput(
 
 export function DefaultSendButton(props: SendButtonSlotProps) {
   const cls = useCls();
-  const Icon = useIcons().send;
+  const icons = useIcons();
+  const Icon = props.canStop ? icons.stop : icons.send;
   return (
     <button
       {...props.buttonProps}

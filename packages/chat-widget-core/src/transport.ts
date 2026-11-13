@@ -1,8 +1,14 @@
-// HTTP + SSE transport against the chat-service public widget API.
+// HTTP + SSE transport against chat-service.
 //
-// All requests include the X-Widget-User-Id header — the embedding app's
-// stable identifier for its visitor. Server-side, this is treated as
-// opaque text; trust comes from the widget token + Origin allowlist.
+// Two ways in, one wire format:
+//
+// - **Widget** (`widgetToken` + `widgetUserId`): the public widget API,
+//   `/api/widget/v1/{token}`. Every request carries the X-Widget-User-Id
+//   header — the embedding app's stable identifier for its visitor, opaque
+//   text server-side; trust comes from the widget token + Origin allowlist.
+// - **Bearer** (`bearer`): Urai's own add-ons signed in as a member, on
+//   `/api/client/v1`. Requests carry `Authorization: Bearer <session>`, and
+//   the thread list and config are the chosen agent's.
 
 import type {
   ClientHelloWire,
@@ -12,8 +18,41 @@ import type {
 export interface TransportOptions {
   /** Origin (or origin + path prefix) of the chat-service deployment. */
   baseUrl: string;
-  widgetToken: string;
-  widgetUserId: string;
+  /** Widget auth. Ignored when `bearer` is set. */
+  widgetToken?: string;
+  widgetUserId?: string;
+  /** Member-host auth, for Urai's own add-ons. Takes precedence over the widget fields. */
+  bearer?: BearerAuth;
+}
+
+/** What a thread is attached to in the host app — for Google Docs, the open document. */
+export interface ThreadRef {
+  ref: string;
+  /** A label for the ref (the document's title), shown in thread lists. */
+  title?: string;
+}
+
+/**
+ * Auth for a member host (`/api/client/v1`): a bearer session from the
+ * connect flow, and the agent to talk to.
+ */
+export interface BearerAuth {
+  /** The agent (assistant) id. Config and the thread list are this agent's. */
+  agentId: string;
+  /** The current session token. Called before every request. */
+  getToken(): string | Promise<string>;
+  /**
+   * Called once when a request comes back 401. Return a fresh token to retry
+   * with, or `null` to give up (the add-on then asks the user to connect
+   * again). Without it a 401 is simply an error.
+   */
+  refreshToken?(): string | null | Promise<string | null>;
+  /**
+   * What new threads attach to, and what the thread list is filtered by. A
+   * function is read on every call, so a host that switches documents
+   * without remounting can return the new one.
+   */
+  threadRef?: ThreadRef | null | (() => ThreadRef | null);
 }
 
 export interface ServerConfig {
@@ -76,6 +115,13 @@ export interface ServerMessage {
    */
   streaming?: boolean;
   stream_url?: string | null;
+  /**
+   * On the running row only: client tool calls still waiting for a client,
+   * shaped like the `client_tool_call` event. The store runs them from its
+   * history poll, so a call still arrives when a proxy buffers the event
+   * stream. Absent when none, and from older servers.
+   */
+  client_calls?: unknown[] | null;
 }
 
 /** Where a sub-agent run got to. `running` until its tool call completes. */
@@ -222,28 +268,81 @@ export class WidgetHttpError extends Error {
 }
 
 export class Transport {
+  /**
+   * Stop the thread's running turn. Present only on transports whose server
+   * has a stop route (bearer); the widget API has none yet, so UIs show a Stop
+   * button only when this exists.
+   */
+  readonly stopTurn?: (threadId: string) => Promise<void>;
+
   constructor(private opts: TransportOptions) {
     this.opts = { ...opts, baseUrl: opts.baseUrl.replace(/\/+$/, "") };
+    if (opts.bearer) {
+      this.stopTurn = async (threadId: string) => {
+        const res = await this.req(`/threads/${threadId}/stop`, { method: "POST", json: true });
+        // 304: nothing was running, which is what the caller wanted.
+        if (!res.ok && res.status !== 304) throw new Error(`stop failed: ${res.status}`);
+      };
+    }
   }
 
   setWidgetUserId(id: string) {
     this.opts.widgetUserId = id;
   }
 
-  private headers(extra?: Record<string, string>): Record<string, string> {
-    return {
-      "content-type": "application/json",
-      "x-widget-user-id": this.opts.widgetUserId,
-      ...(extra ?? {}),
-    };
+  private get bearer(): BearerAuth | undefined {
+    return this.opts.bearer;
+  }
+
+  private threadRef(): ThreadRef | null {
+    const r = this.bearer?.threadRef;
+    return (typeof r === "function" ? r() : r) ?? null;
   }
 
   private url(path: string): string {
-    return `${this.opts.baseUrl}/api/widget/v1/${this.opts.widgetToken}${path}`;
+    const b = this.bearer;
+    if (!b) return `${this.opts.baseUrl}/api/widget/v1/${this.opts.widgetToken}${path}`;
+    // The widget's agent is implied by its token; a member names it.
+    const agent = `/agents/${encodeURIComponent(b.agentId)}`;
+    const mapped = path === "/config" || path === "/threads" ? `${agent}${path}` : path;
+    return `${this.opts.baseUrl}/api/client/v1${mapped}`;
+  }
+
+  /**
+   * One request. `json` adds the JSON content type (uploads must not set one:
+   * the browser fills in the multipart boundary). A bearer request that comes
+   * back 401 is retried once with `refreshToken()`'s token, if it gives one.
+   *
+   * The widget path calls `fetch` synchronously, as it always has: a widget
+   * destroyed straight after construction relies on the config request
+   * already being in flight.
+   */
+  private req(
+    path: string,
+    init: { method?: string; body?: BodyInit; json?: boolean; query?: string } = {},
+  ): Promise<Response> {
+    const url = this.url(path) + (init.query ?? "");
+    const send = (auth: Record<string, string>) => {
+      const headers: Record<string, string> = init.json ? { "content-type": "application/json" } : {};
+      Object.assign(headers, auth);
+      const reqInit: RequestInit = { headers };
+      if (init.method) reqInit.method = init.method;
+      if (init.body !== undefined) reqInit.body = init.body;
+      return fetch(url, reqInit);
+    };
+    const b = this.bearer;
+    if (!b) return send({ "x-widget-user-id": this.opts.widgetUserId ?? "" });
+    const withToken = (token: string) => send({ authorization: `Bearer ${token}` });
+    return Promise.resolve(b.getToken()).then(async (token) => {
+      const res = await withToken(token);
+      if (res.status !== 401 || !b.refreshToken) return res;
+      const fresh = await b.refreshToken();
+      return fresh ? withToken(fresh) : res;
+    });
   }
 
   async fetchConfig(): Promise<ServerConfig> {
-    const res = await fetch(this.url("/config"), { headers: this.headers() });
+    const res = await this.req("/config", { json: true });
     if (!res.ok) throw new Error(`config fetch failed: ${res.status}`);
     return res.json();
   }
@@ -251,10 +350,15 @@ export class Transport {
   /**
    * List threads for the current visitor. Server filters by
    * `(widget_id, X-Widget-User-Id)` — without the header we'd receive a
-   * 400 — so the result is always scoped to this user.
+   * 400 — so the result is always scoped to this user. With bearer auth:
+   * this user's threads with the agent, on the thread ref when there is one.
    */
   async listThreads(): Promise<ThreadSummary[]> {
-    const res = await fetch(this.url("/threads"), { headers: this.headers() });
+    const ref = this.bearer ? this.threadRef() : null;
+    const res = await this.req("/threads", {
+      json: true,
+      query: ref ? `?ref=${encodeURIComponent(ref.ref)}` : undefined,
+    });
     if (!res.ok) throw new Error(`list threads failed: ${res.status}`);
     return res.json();
   }
@@ -274,10 +378,12 @@ export class Transport {
       collections?: string[] | null;
     } = {},
   ): Promise<CreateThreadResult> {
-    const res = await fetch(this.url("/threads"), {
+    const ref = this.bearer ? this.threadRef() : null;
+    const payload = ref ? { ...body, ref: ref.ref, ref_title: ref.title } : body;
+    const res = await this.req("/threads", {
       method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify(body),
+      json: true,
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(`create thread failed: ${res.status}`);
     return res.json();
@@ -292,9 +398,9 @@ export class Transport {
     threadId: string,
     vars: Record<string, unknown> | null,
   ): Promise<void> {
-    const res = await fetch(this.url(`/threads/${threadId}`), {
+    const res = await this.req(`/threads/${threadId}`, {
       method: "PATCH",
-      headers: this.headers(),
+      json: true,
       body: JSON.stringify({ vars }),
     });
     if (!res.ok) throw new Error(`patch thread vars failed: ${res.status}`);
@@ -313,9 +419,9 @@ export class Transport {
     threadId: string,
     collections: string[] | null,
   ): Promise<void> {
-    const res = await fetch(this.url(`/threads/${threadId}`), {
+    const res = await this.req(`/threads/${threadId}`, {
       method: "PATCH",
-      headers: this.headers(),
+      json: true,
       body: JSON.stringify({ collections: collections ?? [] }),
     });
     if (!res.ok) {
@@ -329,9 +435,7 @@ export class Transport {
    * as one that does not exist.
    */
   async getThread(threadId: string): Promise<ThreadSummary> {
-    const res = await fetch(this.url(`/threads/${threadId}`), {
-      headers: this.headers(),
-    });
+    const res = await this.req(`/threads/${threadId}`, { json: true });
     if (!res.ok) {
       throw new WidgetHttpError(`get thread failed: ${res.status}`, res.status);
     }
@@ -339,9 +443,7 @@ export class Transport {
   }
 
   async listMessages(threadId: string): Promise<ServerMessage[]> {
-    const res = await fetch(this.url(`/threads/${threadId}/messages`), {
-      headers: this.headers(),
-    });
+    const res = await this.req(`/threads/${threadId}/messages`, { json: true });
     if (!res.ok) {
       throw new WidgetHttpError(`list messages failed: ${res.status}`, res.status);
     }
@@ -374,9 +476,9 @@ export class Transport {
     // Tools the host declared. A server whose widget doesn't accept declared
     // tools (or that predates them) ignores the field.
     if (client) body.client = client;
-    const res = await fetch(this.url(`/threads/${threadId}/messages`), {
+    const res = await this.req(`/threads/${threadId}/messages`, {
       method: "POST",
-      headers: this.headers(),
+      json: true,
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`send failed: ${res.status}`);
@@ -389,9 +491,9 @@ export class Transport {
    * must then not run the call.
    */
   async claimToolCall(callId: string, instance: string): Promise<boolean> {
-    const res = await fetch(this.url(`/tool-calls/${callId}/claim`), {
+    const res = await this.req(`/tool-calls/${callId}/claim`, {
       method: "POST",
-      headers: this.headers(),
+      json: true,
       body: JSON.stringify({ instance }),
     });
     if (res.status === 409) return false;
@@ -401,9 +503,9 @@ export class Transport {
 
   /** Post a claimed call's result. `false` when the server refused it (409). */
   async postToolCallResult(callId: string, body: ClientToolResultWire): Promise<boolean> {
-    const res = await fetch(this.url(`/tool-calls/${callId}/result`), {
+    const res = await this.req(`/tool-calls/${callId}/result`, {
       method: "POST",
-      headers: this.headers(),
+      json: true,
       body: JSON.stringify(body),
     });
     if (res.status === 409) return false;
@@ -420,13 +522,9 @@ export class Transport {
   async uploadAttachment(file: File): Promise<WidgetAttachment> {
     const form = new FormData();
     form.append("file", file, file.name);
-    const res = await fetch(this.url(`/attachments/upload`), {
-      method: "POST",
-      // Don't set content-type — the browser fills in the multipart
-      // boundary. The x-widget-user-id header is still required.
-      headers: { "x-widget-user-id": this.opts.widgetUserId },
-      body: form,
-    });
+    // No content-type: the browser fills in the multipart boundary. The
+    // visitor header (or the bearer token) is still required.
+    const res = await this.req(`/attachments/upload`, { method: "POST", body: form });
     if (!res.ok) {
       let detail = "";
       try { detail = `: ${await res.text()}`; } catch { /* ignore */ }
@@ -435,14 +533,6 @@ export class Transport {
     return res.json();
   }
 
-  /**
-   * Fetch a stored attachment as a Blob. We can't use `<img src=...>`
-   * or `<a href=...>` directly because the request needs the
-   * X-Widget-User-Id header — the path-embedded widget token is not
-   * sufficient on its own (it'd let any visitor of the same widget
-   * read any other visitor's files). The caller should use the
-   * returned blob via `URL.createObjectURL`.
-   */
   /**
    * Fetch a file from a thread's workspace as a Blob. Same constraint as
    * `fetchAttachment`: the read is only scoped to this visitor through the
@@ -459,9 +549,7 @@ export class Transport {
       .filter(Boolean)
       .map(encodeURIComponent)
       .join("/");
-    const res = await fetch(this.url(`/threads/${threadId}/files/${encoded}`), {
-      headers: { "x-widget-user-id": this.opts.widgetUserId },
-    });
+    const res = await this.req(`/threads/${threadId}/files/${encoded}`);
     if (!res.ok) throw new Error(`file fetch failed: ${res.status}`);
     return res.blob();
   }
@@ -477,9 +565,7 @@ export class Transport {
    * empty workspace returns.
    */
   async fetchThreadArchive(threadId: string): Promise<ThreadArchive> {
-    const res = await fetch(this.url(`/threads/${threadId}/files.zip`), {
-      headers: { "x-widget-user-id": this.opts.widgetUserId },
-    });
+    const res = await this.req(`/threads/${threadId}/files.zip`);
     if (!res.ok) throw new Error(`archive fetch failed: ${res.status}`);
     const fileName =
       contentDispositionFileName(res.headers?.get("content-disposition") ?? null) ??
@@ -487,11 +573,16 @@ export class Transport {
     return { blob: await res.blob(), fileName };
   }
 
+  /**
+   * Fetch a stored attachment as a Blob. We can't use `<img src=...>`
+   * or `<a href=...>` directly because the request needs the
+   * X-Widget-User-Id header — the path-embedded widget token is not
+   * sufficient on its own (it'd let any visitor of the same widget
+   * read any other visitor's files). The caller should use the
+   * returned blob via `URL.createObjectURL`.
+   */
   async fetchAttachment(messageId: string, attachmentId: string): Promise<Blob> {
-    const res = await fetch(
-      this.url(`/attachments/${messageId}/${attachmentId}`),
-      { headers: { "x-widget-user-id": this.opts.widgetUserId } },
-    );
+    const res = await this.req(`/attachments/${messageId}/${attachmentId}`);
     if (!res.ok) throw new Error(`attachment fetch failed: ${res.status}`);
     return res.blob();
   }
@@ -519,7 +610,11 @@ export class Transport {
     // Only the server's path and query are used, under the configured
     // baseUrl, so the baseUrl always wins even if the server returns a
     // relative path.
-    const fallback = `/api/widget/v1/${this.opts.widgetToken}/messages/${messageId}/stream`;
+    // A member stream always needs the server's ticketed URL; the fallback
+    // only exists for widget servers that predate tickets.
+    const fallback = this.bearer
+      ? `/api/client/v1/messages/${messageId}/stream`
+      : `/api/widget/v1/${this.opts.widgetToken}/messages/${messageId}/stream`;
     let path = fallback;
     if (streamUrl) {
       const parsed = new URL(streamUrl, "http://server.invalid");

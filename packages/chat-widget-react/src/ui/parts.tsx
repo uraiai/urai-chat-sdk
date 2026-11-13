@@ -65,7 +65,7 @@ export function ArchiveButton() {
 
 export function ThreadTrigger() {
   const { labels } = usePresentation();
-  const Icon = useIcons().chevron;
+  const Icon = useIcons().threads;
   const [open, setOpen] = useState(false);
   const threads = useThreads();
   const { readOnly } = useThread();
@@ -446,8 +446,9 @@ export function Composer() {
       sendButton={
         <Send
           label={composer.sendLabel}
-          disabled={!composer.canSubmit}
+          disabled={!composer.canSubmit && !composer.canStop}
           isStreaming={composer.isStreaming}
+          canStop={composer.canStop}
           buttonProps={composer.getSendButtonProps()}
         />
       }

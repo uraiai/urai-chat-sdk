@@ -185,6 +185,12 @@ export interface ChatState {
    * `actions.approveToolCall` / `actions.declineToolCall`.
    */
   approvals: PendingApproval[];
+  /**
+   * Whether `actions.stopTurn` can stop a running reply: the transport has a
+   * stop route (member hosts do; the widget API does not yet). Show a Stop
+   * button only when this is true. Fixed at construction.
+   */
+  canStop: boolean;
   /** Last error surfaced to the view, if it was not turned into a message. */
   error: string | null;
 }

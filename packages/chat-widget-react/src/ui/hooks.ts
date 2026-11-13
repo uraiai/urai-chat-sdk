@@ -134,6 +134,13 @@ export interface UseComposerResult {
   isStreaming: boolean;
   placeholder: string;
   sendLabel: string;
+  /**
+   * A reply is running and the transport can stop it (`state.canStop`): the
+   * send button becomes a Stop button. Always false on widget transports.
+   */
+  canStop: boolean;
+  /** Stop the running reply. A no-op unless `canStop`. */
+  stop(): void;
   getFormProps(): FormHTMLAttributes<HTMLFormElement>;
   getInputProps(): TextareaHTMLAttributes<HTMLTextAreaElement> & {
     ref: RefCallback<HTMLTextAreaElement>;
@@ -147,8 +154,9 @@ export function useComposer(): UseComposerResult {
   const actions = useChatActions();
   const labels = useLabels();
   const { idPrefix } = usePresentation();
-  const { draft, canSend, isStreaming, isSending } = useChatSelector(
+  const { draft, canSend, isStreaming, isSending, canStop } = useChatSelector(
     (s) => ({
+      canStop: s.canStop && s.status !== "idle",
       draft: s.draft,
       canSend:
         !s.readOnly &&
@@ -174,6 +182,11 @@ export function useComposer(): UseComposerResult {
     void actions.send();
   }, [actions, canSend]);
 
+  const stop = useCallback(() => {
+    if (!canStop) return;
+    void actions.stopTurn();
+  }, [actions, canStop]);
+
   useEffect(() => {
     if (draft === "") autosize(inputRef.current);
   }, [draft, autosize]);
@@ -185,7 +198,9 @@ export function useComposer(): UseComposerResult {
     canSubmit: canSend,
     isStreaming,
     placeholder: labels.placeholder,
-    sendLabel: labels.send,
+    sendLabel: canStop ? labels.stop : labels.send,
+    canStop,
+    stop,
 
     getFormProps: () => ({
       onSubmit: (e) => {
@@ -225,12 +240,22 @@ export function useComposer(): UseComposerResult {
       },
     }),
 
-    getSendButtonProps: () => ({
-      type: "submit",
-      disabled: !canSend,
-      "aria-label": labels.send,
-      "aria-busy": isSending || undefined,
-    }),
+    getSendButtonProps: () =>
+      canStop
+        ? {
+            type: "button",
+            "aria-label": labels.stop,
+            onClick: (e) => {
+              e.preventDefault();
+              stop();
+            },
+          }
+        : {
+            type: "submit",
+            disabled: !canSend,
+            "aria-label": labels.send,
+            "aria-busy": isSending || undefined,
+          },
   };
 }
 

@@ -60,6 +60,14 @@ export interface ClientToolsOptions {
   host?: string;
   tools: ClientToolDeclaration[];
   /**
+   * Built-in tool families this host implements, e.g. `["document@1"]`. For
+   * Urai's own add-ons (member hosts) only: the server supplies the family's
+   * declarations, so its tools (`doc_read`, `doc_edit`, …) are listed in
+   * `tools` for their handlers but never sent as declarations. A widget's
+   * families are ignored by the server.
+   */
+  families?: string[];
+  /**
    * Opt-in review before each `write` call runs.
    *
    * - `"inline"`: the chat shows an Allow / Decline card in the reply.
@@ -85,6 +93,7 @@ export type InlineApprover = (pending: PendingApproval) => Promise<ClientToolApp
 /** The `client` object sent with each message. */
 export interface ClientHelloWire {
   host: string;
+  families?: string[];
   tools: Array<{
     name: string;
     description: string;
@@ -93,11 +102,20 @@ export interface ClientHelloWire {
   }>;
 }
 
+/** Name prefixes of Urai's built-in families; the server owns those declarations. */
+export const FAMILY_TOOL_PREFIXES = ["doc_", "sheet_", "slide_", "browser_"] as const;
+
+function isFamilyTool(name: string): boolean {
+  return FAMILY_TOOL_PREFIXES.some((p) => name.startsWith(p));
+}
+
 export function clientHello(opts: ClientToolsOptions | null | undefined): ClientHelloWire | null {
   if (!opts || opts.tools.length === 0) return null;
+  const families = opts.families?.length ? [...opts.families] : undefined;
   return {
     host: opts.host ?? "custom",
-    tools: opts.tools.map((t) => ({
+    ...(families ? { families } : {}),
+    tools: opts.tools.filter((t) => !isFamilyTool(t.name)).map((t) => ({
       name: t.name,
       description: t.description,
       parameters: t.parameters ?? { type: "object", properties: {} },

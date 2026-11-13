@@ -13,6 +13,8 @@ export type UraiChatIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
 export interface UraiChatIcons {
   chevron: UraiChatIcon;
+  /** The header's conversation switcher. The chevron unless replaced. */
+  threads: UraiChatIcon;
   plus: UraiChatIcon;
   search: UraiChatIcon;
   paperclip: UraiChatIcon;
@@ -43,8 +45,11 @@ const icon =
     </svg>
   );
 
+const chevron = icon(<polyline points="6 9 12 15 18 9" />);
+
 export const defaultIcons: UraiChatIcons = {
-  chevron: icon(<polyline points="6 9 12 15 18 9" />),
+  chevron,
+  threads: chevron,
   plus: icon(
     <>
       <line x1="12" y1="5" x2="12" y2="19" />

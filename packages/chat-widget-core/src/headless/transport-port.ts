@@ -58,6 +58,12 @@ export interface ChatTransport {
   claimToolCall?(callId: string, instance: string): Promise<boolean>;
   postToolCallResult?(callId: string, body: ClientToolResultWire): Promise<boolean>;
 
+  /**
+   * Stop the thread's running turn (optional: the widget API has no stop
+   * route yet). The store offers `actions.stopTurn` only when this exists.
+   */
+  stopTurn?(threadId: string): Promise<void>;
+
   uploadAttachment(file: File): Promise<WidgetAttachment>;
   fetchAttachment(messageId: string, attachmentId: string): Promise<Blob>;
   fetchThreadFile(threadId: string, path: string): Promise<Blob>;
